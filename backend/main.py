@@ -1,0 +1,219 @@
+import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+
+from backend.core.config import settings
+from backend.core.logging_config import setup_logging
+from backend.api.middleware import RequestLoggingMiddleware
+from backend.api.redis_rate_limit_middleware import RedisRateLimitMiddleware
+from backend.api.workspace_middleware import WorkspaceContextMiddleware
+from backend.api.routes import auth, clones, memories, conversations, documents, chat, health, api_keys, admin
+from backend.api.routes import auth_enterprise, workspaces
+from backend.core.redis_client import close_redis
+
+
+setup_logging(log_level=settings.LOG_LEVEL, log_format=settings.LOG_FORMAT)
+
+logger = logging.getLogger(__name__)
+logger.info("MAIN_MODULE_LOADED", extra={"file": __file__})
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events."""
+    logger.info("APPLICATION_STARTUP", extra={
+        "project_name": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "llm_provider": settings.LLM_PROVIDER
+    })
+
+    yield
+
+    logger.info("APPLICATION_SHUTDOWN")
+    close_redis()
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    lifespan=lifespan
+)
+
+app.add_middleware(RequestLoggingMiddleware)
+
+app.add_middleware(WorkspaceContextMiddleware, enabled=True)
+
+app.add_middleware(RedisRateLimitMiddleware, enabled=True)
+
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "https://localhost:3000"
+]
+
+if hasattr(settings, 'FRONTEND_URL') and settings.FRONTEND_URL:
+    ALLOWED_ORIGINS.append(settings.FRONTEND_URL)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+        "X-Correlation-ID",
+        "Accept",
+        "Accept-Language"
+    ],
+    expose_headers=[
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "X-Request-ID"
+    ],
+    max_age=600
+)
+
+TRUSTED_HOSTS = ["localhost", "127.0.0.1", "*.localhost"]
+if hasattr(settings, 'ALLOWED_HOSTS') and settings.ALLOWED_HOSTS:
+    TRUSTED_HOSTS.extend(settings.ALLOWED_HOSTS)
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=TRUSTED_HOSTS)
+
+logger.info("SECURITY_MIDDLEWARE_CONFIGURED", extra={
+    "allowed_origins": ALLOWED_ORIGINS,
+    "trusted_hosts": TRUSTED_HOSTS,
+    "rate_limiting_enabled": True
+})
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
+    csp_directives = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "font-src 'self' data:",
+        "connect-src 'self' https://gniuyicdmjmzbgwbnvmk.supabase.co",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'"
+    ]
+    response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+
+    return response
+
+
+logger.info("CONTENT_SECURITY_POLICY_CONFIGURED")
+
+app.include_router(
+    auth.router,
+    prefix=f"{settings.API_V1_PREFIX}/auth",
+    tags=["auth"]
+)
+
+app.include_router(
+    auth_enterprise.router,
+    prefix=f"{settings.API_V1_PREFIX}/auth-v2",
+    tags=["auth-enterprise"]
+)
+
+app.include_router(
+    workspaces.router,
+    prefix=f"{settings.API_V1_PREFIX}/workspaces",
+    tags=["workspaces"]
+)
+
+app.include_router(
+    clones.router,
+    prefix=f"{settings.API_V1_PREFIX}/clones",
+    tags=["clones"]
+)
+
+app.include_router(
+    memories.router,
+    prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/memories",
+    tags=["memories"]
+)
+
+app.include_router(
+    conversations.router,
+    prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/conversations",
+    tags=["conversations"]
+)
+
+app.include_router(
+    documents.router,
+    prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/documents",
+    tags=["documents"]
+)
+
+app.include_router(
+    chat.router,
+    prefix=f"{settings.API_V1_PREFIX}/chat",
+    tags=["chat"]
+)
+
+app.include_router(
+    health.router,
+    tags=["health"]
+)
+
+app.include_router(
+    api_keys.router,
+    prefix=f"{settings.API_V1_PREFIX}",
+    tags=["api-keys"]
+)
+
+app.include_router(
+    admin.router,
+    prefix=f"{settings.API_V1_PREFIX}",
+    tags=["admin"]
+)
+
+logger.info("API_ROUTES_REGISTERED", extra={
+    "api_prefix": settings.API_V1_PREFIX
+})
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    logger.debug("ROOT_ENDPOINT_ACCESSED")
+    return {
+        "message": f"Welcome to {settings.PROJECT_NAME}",
+        "version": settings.VERSION,
+        "docs": "/docs"
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    logger.info("STARTING_UVICORN_SERVER", extra={
+        "host": "0.0.0.0",
+        "port": 8000
+    })
+
+    uvicorn.run(
+        "backend.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_config=None
+    )

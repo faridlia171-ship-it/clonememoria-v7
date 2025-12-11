@@ -1,0 +1,121 @@
+from fastapi import Request, HTTPException, status
+from starlette.middleware.base import BaseHTTPMiddleware
+from typing import Optional
+from uuid import UUID
+import logging
+
+from backend.db.client import get_db
+from backend.services.rate_limit_service import RateLimitService
+
+logger = logging.getLogger(__name__)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, enabled: bool = True):
+        super().__init__(app)
+        self.enabled = enabled
+
+    async def dispatch(self, request: Request, call_next):
+        if not self.enabled:
+            return await call_next(request)
+
+        if not request.url.path.startswith('/api/'):
+            return await call_next(request)
+
+        if request.url.path in ['/api/health', '/api/auth/login', '/api/auth/register']:
+            return await call_next(request)
+
+        user_id = self._get_user_id_from_request(request)
+        if not user_id:
+            return await call_next(request)
+
+        try:
+            db = get_db()
+            rate_limit_service = RateLimitService(db)
+
+            endpoint = self._normalize_endpoint(request.url.path)
+            rate_limit_result = rate_limit_service.check_rate_limit(
+                user_id=user_id,
+                endpoint=endpoint
+            )
+
+            if not rate_limit_result.get('allowed', True):
+                logger.warning(
+                    f"Rate limit exceeded for user {user_id} on endpoint {endpoint}",
+                    extra={
+                        "user_id": str(user_id),
+                        "endpoint": endpoint,
+                        "current_count": rate_limit_result.get('current_count'),
+                        "limit": rate_limit_result.get('limit_per_minute')
+                    }
+                )
+
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail={
+                        "message": "Rate limit exceeded",
+                        "current_count": rate_limit_result.get('current_count'),
+                        "limit_per_minute": rate_limit_result.get('limit_per_minute'),
+                        "reset_at": rate_limit_result.get('reset_at')
+                    }
+                )
+
+            rate_limit_service.increment_rate_limit(
+                user_id=user_id,
+                endpoint=endpoint
+            )
+
+            response = await call_next(request)
+
+            response.headers['X-RateLimit-Limit'] = str(rate_limit_result.get('limit_per_minute', 0))
+            response.headers['X-RateLimit-Remaining'] = str(
+                rate_limit_result.get('limit_per_minute', 0) - rate_limit_result.get('current_count', 0)
+            )
+            response.headers['X-RateLimit-Reset'] = rate_limit_result.get('reset_at', '')
+
+            return response
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Rate limit middleware error: {str(e)}")
+            return await call_next(request)
+
+    def _get_user_id_from_request(self, request: Request) -> Optional[UUID]:
+        try:
+            if hasattr(request.state, 'user_id'):
+                return UUID(request.state.user_id)
+
+            auth_header = request.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
+                return None
+
+            from backend.core.security import decode_access_token
+            token = auth_header.split(' ')[1]
+            payload = decode_access_token(token)
+            user_id = payload.get('sub')
+
+            return UUID(user_id) if user_id else None
+
+        except Exception as e:
+            logger.debug(f"Could not extract user_id from request: {str(e)}")
+            return None
+
+    def _normalize_endpoint(self, path: str) -> str:
+        parts = path.split('/')
+        normalized_parts = []
+
+        for part in parts:
+            if part and not self._is_uuid(part) and not part.isdigit():
+                normalized_parts.append(part)
+            elif part:
+                normalized_parts.append('*')
+
+        return '/' + '/'.join(normalized_parts) + '/*' if normalized_parts else path
+
+    def _is_uuid(self, value: str) -> bool:
+        try:
+            UUID(value)
+            return True
+        except (ValueError, AttributeError):
+            return False
