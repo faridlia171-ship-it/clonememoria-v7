@@ -13,7 +13,7 @@ python-dotenv==1.0.0
 itsdangerous==2.1.2
 
 supabase==1.0.4
-httpx==0.25.2
+httpx==0.24.1
 
 redis==5.0.1
 hiredis==2.3.2
