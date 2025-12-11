@@ -1,22 +1,35 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
 
-# CloneMemoria Backend Startup Script
+echo "==== CloneMemoria Backend Startup ===="
 
-echo "Starting CloneMemoria Backend..."
+# Detect Render environment
+if [[ "$RENDER" == "true" ]]; then
+    echo "[MODE] Render Production detected"
 
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "Virtual environment not found. Creating one..."
-    python3 -m venv venv
+    echo "Installing dependencies (Render)..."
+    pip install --upgrade pip
+    pip install -r backend/requirements.txt
+
+    echo "Starting FastAPI (production mode)..."
+    exec uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+
+else
+    echo "[MODE] Local Development detected"
+
+    # Create venv if missing
+    if [ ! -d "venv" ]; then
+        echo "Creating virtual environment..."
+        python3 -m venv venv
+    fi
+
+    echo "Activating virtual environment..."
+    source venv/bin/activate
+
+    echo "Installing dependencies (local venv)..."
+    pip install --upgrade pip
+    pip install -r backend/requirements.txt
+
+    echo "Starting FastAPI (with autoreload)..."
+    uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 fi
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install dependencies
-echo "Installing dependencies..."
-pip install -r requirements.txt
-
-# Start the server
-echo "Starting FastAPI server on http://localhost:8000"
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
