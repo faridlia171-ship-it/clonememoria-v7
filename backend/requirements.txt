@@ -12,7 +12,8 @@ python-dotenv==1.0.0
 
 itsdangerous==2.1.2
 
-supabase==2.3.4
+supabase==1.0.4
+gotrue==1.4.3
 httpx==0.25.2
 
 redis==5.0.1
