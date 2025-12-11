@@ -3,8 +3,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timedelta
 
-from api.deps import get_current_admin, get_db_client
-from schemas.admin import (
+# FIXED IMPORTS
+from backend.api.deps import get_current_admin, get_db_client
+from backend.schemas.admin import (
     AdminUserSummary,
     AdminCloneSummary,
     PlatformStats
@@ -116,7 +117,7 @@ async def list_all_clones(
 
     except Exception as e:
         logger.error(
-            "Error listing clones for admin",
+            "Error listing clones",
             extra={"admin_id": admin["id"], "error": str(e)}
         )
         raise HTTPException(status_code=500, detail="Failed to list clones")
