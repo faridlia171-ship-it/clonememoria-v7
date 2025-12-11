@@ -4,13 +4,14 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from uuid import UUID
 
-from api.deps import get_current_user, get_db_client
-from schemas.api_key import (
+# Import corrigé : Render exige des chemins absolus incluant "backend"
+from backend.api.deps import get_current_user, get_db_client
+from backend.schemas.api_key import (
     APIKeyCreate,
     APIKeyResponse,
     APIKeyCreateResponse
 )
-from services.api_key_service import generate_api_key
+from backend.services.api_key_service import generate_api_key
 
 logger = logging.getLogger(__name__)
 
