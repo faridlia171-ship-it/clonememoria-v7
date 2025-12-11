@@ -1,51 +1,65 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import FileResponse, PlainTextResponse
 
 from backend.core.config import settings
 from backend.core.logging_config import setup_logging
 from backend.api.middleware import RequestLoggingMiddleware
 from backend.api.redis_rate_limit_middleware import RedisRateLimitMiddleware
 from backend.api.workspace_middleware import WorkspaceContextMiddleware
-from backend.api.routes import auth, clones, memories, conversations, documents, chat, health, api_keys, admin
-from backend.api.routes import auth_enterprise, workspaces
+from backend.api.routes import (
+    auth, clones, memories, conversations, documents, chat, health,
+    api_keys, admin, auth_enterprise, workspaces
+)
 from backend.core.redis_client import close_redis
+import os
 
 
+# -----------------------------------------------------------
+# LOGGING
+# -----------------------------------------------------------
 setup_logging(log_level=settings.LOG_LEVEL, log_format=settings.LOG_FORMAT)
-
 logger = logging.getLogger(__name__)
 logger.info("MAIN_MODULE_LOADED", extra={"file": __file__})
 
 
+# -----------------------------------------------------------
+# LIFESPAN
+# -----------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events."""
-    logger.info("APPLICATION_STARTUP", extra={
-        "project_name": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-        "llm_provider": settings.LLM_PROVIDER
-    })
-
+    logger.info(
+        "APPLICATION_STARTUP",
+        extra={
+            "project_name": settings.PROJECT_NAME,
+            "version": settings.VERSION,
+            "llm_provider": settings.LLM_PROVIDER
+        }
+    )
     yield
-
     logger.info("APPLICATION_SHUTDOWN")
     close_redis()
 
 
+# -----------------------------------------------------------
+# APP INITIALISATION
+# -----------------------------------------------------------
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     lifespan=lifespan
 )
 
+# -----------------------------------------------------------
+# MIDDLEWARE
+# -----------------------------------------------------------
+
 app.add_middleware(RequestLoggingMiddleware)
-
 app.add_middleware(WorkspaceContextMiddleware, enabled=True)
-
 app.add_middleware(RedisRateLimitMiddleware, enabled=True)
 
 ALLOWED_ORIGINS = [
@@ -54,7 +68,7 @@ ALLOWED_ORIGINS = [
     "https://localhost:3000"
 ]
 
-if hasattr(settings, 'FRONTEND_URL') and settings.FRONTEND_URL:
+if getattr(settings, "FRONTEND_URL", None):
     ALLOWED_ORIGINS.append(settings.FRONTEND_URL)
 
 app.add_middleware(
@@ -80,18 +94,27 @@ app.add_middleware(
 )
 
 TRUSTED_HOSTS = ["localhost", "127.0.0.1", "*.localhost"]
-if hasattr(settings, 'ALLOWED_HOSTS') and settings.ALLOWED_HOSTS:
+if getattr(settings, "ALLOWED_HOSTS", None):
     TRUSTED_HOSTS.extend(settings.ALLOWED_HOSTS)
 
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=TRUSTED_HOSTS)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=TRUSTED_HOSTS
+)
 
-logger.info("SECURITY_MIDDLEWARE_CONFIGURED", extra={
-    "allowed_origins": ALLOWED_ORIGINS,
-    "trusted_hosts": TRUSTED_HOSTS,
-    "rate_limiting_enabled": True
-})
+logger.info(
+    "SECURITY_MIDDLEWARE_CONFIGURED",
+    extra={
+        "allowed_origins": ALLOWED_ORIGINS,
+        "trusted_hosts": TRUSTED_HOSTS,
+        "rate_limiting_enabled": True
+    }
+)
 
 
+# -----------------------------------------------------------
+# SECURITY HEADERS
+# -----------------------------------------------------------
 @app.middleware("http")
 async def add_security_headers(request, call_next):
     response = await call_next(request)
@@ -121,79 +144,33 @@ async def add_security_headers(request, call_next):
 
 logger.info("CONTENT_SECURITY_POLICY_CONFIGURED")
 
-app.include_router(
-    auth.router,
-    prefix=f"{settings.API_V1_PREFIX}/auth",
-    tags=["auth"]
-)
 
-app.include_router(
-    auth_enterprise.router,
-    prefix=f"{settings.API_V1_PREFIX}/auth-v2",
-    tags=["auth-enterprise"]
-)
+# -----------------------------------------------------------
+# ROUTES
+# -----------------------------------------------------------
 
-app.include_router(
-    workspaces.router,
-    prefix=f"{settings.API_V1_PREFIX}/workspaces",
-    tags=["workspaces"]
-)
+# API routes
+app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["auth"])
+app.include_router(auth_enterprise.router, prefix=f"{settings.API_V1_PREFIX}/auth-v2", tags=["auth-enterprise"])
+app.include_router(workspaces.router, prefix=f"{settings.API_V1_PREFIX}/workspaces", tags=["workspaces"])
+app.include_router(clones.router, prefix=f"{settings.API_V1_PREFIX}/clones", tags=["clones"])
+app.include_router(memories.router, prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/memories", tags=["memories"])
+app.include_router(conversations.router, prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/conversations", tags=["conversations"])
+app.include_router(documents.router, prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/documents", tags=["documents"])
+app.include_router(chat.router, prefix=f"{settings.API_V1_PREFIX}/chat", tags=["chat"])
+app.include_router(health.router, tags=["health"])
+app.include_router(api_keys.router, prefix=f"{settings.API_V1_PREFIX}", tags=["api-keys"])
+app.include_router(admin.router, prefix=f"{settings.API_V1_PREFIX}", tags=["admin"])
 
-app.include_router(
-    clones.router,
-    prefix=f"{settings.API_V1_PREFIX}/clones",
-    tags=["clones"]
-)
+logger.info("API_ROUTES_REGISTERED", extra={"api_prefix": settings.API_V1_PREFIX})
 
-app.include_router(
-    memories.router,
-    prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/memories",
-    tags=["memories"]
-)
 
-app.include_router(
-    conversations.router,
-    prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/conversations",
-    tags=["conversations"]
-)
-
-app.include_router(
-    documents.router,
-    prefix=f"{settings.API_V1_PREFIX}/clones/{{clone_id}}/documents",
-    tags=["documents"]
-)
-
-app.include_router(
-    chat.router,
-    prefix=f"{settings.API_V1_PREFIX}/chat",
-    tags=["chat"]
-)
-
-app.include_router(
-    health.router,
-    tags=["health"]
-)
-
-app.include_router(
-    api_keys.router,
-    prefix=f"{settings.API_V1_PREFIX}",
-    tags=["api-keys"]
-)
-
-app.include_router(
-    admin.router,
-    prefix=f"{settings.API_V1_PREFIX}",
-    tags=["admin"]
-)
-
-logger.info("API_ROUTES_REGISTERED", extra={
-    "api_prefix": settings.API_V1_PREFIX
-})
-
+# -----------------------------------------------------------
+# ROOT + STATIC FIXES (favicon, robots, head requests)
+# -----------------------------------------------------------
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
     logger.debug("ROOT_ENDPOINT_ACCESSED")
     return {
         "message": f"Welcome to {settings.PROJECT_NAME}",
@@ -202,13 +179,34 @@ async def root():
     }
 
 
+# HEAD / → éviter les 400
+@app.head("/")
+async def head_root():
+    return Response(status_code=200)
+
+
+# Favicon (évite les erreurs 400)
+FAVICON_PATH = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
+
+@app.get("/favicon.ico")
+async def favicon():
+    if os.path.exists(FAVICON_PATH):
+        return FileResponse(FAVICON_PATH, media_type="image/x-icon")
+    return Response(status_code=204)  # pas de favicon → pas d'erreur
+
+
+# Robots.txt (élimine encore un potentiel 400)
+@app.get("/robots.txt", response_class=PlainTextResponse)
+async def robots():
+    return "User-agent: *\nDisallow: /"
+
+
+# -----------------------------------------------------------
+# RUN (LOCAL ONLY)
+# -----------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-
-    logger.info("STARTING_UVICORN_SERVER", extra={
-        "host": "0.0.0.0",
-        "port": 8000
-    })
+    logger.info("STARTING_UVICORN_SERVER", extra={"host": "0.0.0.0", "port": 8000})
 
     uvicorn.run(
         "backend.main:app",
