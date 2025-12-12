@@ -19,17 +19,17 @@ from backend.core.redis_client import close_redis
 import os
 
 
-# -----------------------------------------------------------
-# LOGGING
-# -----------------------------------------------------------
+# ============================================================
+# LOGGING CONFIG
+# ============================================================
 setup_logging(log_level=settings.LOG_LEVEL, log_format=settings.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 logger.info("MAIN_MODULE_LOADED", extra={"file": __file__})
 
 
-# -----------------------------------------------------------
+# ============================================================
 # LIFESPAN
-# -----------------------------------------------------------
+# ============================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(
@@ -45,19 +45,19 @@ async def lifespan(app: FastAPI):
     close_redis()
 
 
-# -----------------------------------------------------------
-# APP INITIALISATION
-# -----------------------------------------------------------
+# ============================================================
+# APP INIT
+# ============================================================
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     lifespan=lifespan
 )
 
-# -----------------------------------------------------------
-# MIDDLEWARE
-# -----------------------------------------------------------
 
+# ============================================================
+# MIDDLEWARE
+# ============================================================
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(WorkspaceContextMiddleware, enabled=True)
 app.add_middleware(RedisRateLimitMiddleware, enabled=True)
@@ -93,28 +93,34 @@ app.add_middleware(
     max_age=600
 )
 
-TRUSTED_HOSTS = ["localhost", "127.0.0.1", "*.localhost"]
-if getattr(settings, "ALLOWED_HOSTS", None):
-    TRUSTED_HOSTS.extend(settings.ALLOWED_HOSTS)
+
+# ============================================================
+# TRUSTED HOSTS — FIX RENDER ERRORS 400
+# ============================================================
+TRUSTED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "*.localhost",
+    "*.onrender.com",                     # Render domain
+    "clonememoria-backend.onrender.com",  # Your exact domain
+    "*",                                   # Internal Render IPs: 10.x.x.x
+]
 
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=TRUSTED_HOSTS
 )
 
-logger.info(
-    "SECURITY_MIDDLEWARE_CONFIGURED",
-    extra={
-        "allowed_origins": ALLOWED_ORIGINS,
-        "trusted_hosts": TRUSTED_HOSTS,
-        "rate_limiting_enabled": True
-    }
-)
+logger.info("SECURITY_MIDDLEWARE_CONFIGURED", extra={
+    "allowed_origins": ALLOWED_ORIGINS,
+    "trusted_hosts": TRUSTED_HOSTS,
+    "rate_limiting_enabled": True
+})
 
 
-# -----------------------------------------------------------
+# ============================================================
 # SECURITY HEADERS
-# -----------------------------------------------------------
+# ============================================================
 @app.middleware("http")
 async def add_security_headers(request, call_next):
     response = await call_next(request)
@@ -145,11 +151,9 @@ async def add_security_headers(request, call_next):
 logger.info("CONTENT_SECURITY_POLICY_CONFIGURED")
 
 
-# -----------------------------------------------------------
+# ============================================================
 # ROUTES
-# -----------------------------------------------------------
-
-# API routes
+# ============================================================
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["auth"])
 app.include_router(auth_enterprise.router, prefix=f"{settings.API_V1_PREFIX}/auth-v2", tags=["auth-enterprise"])
 app.include_router(workspaces.router, prefix=f"{settings.API_V1_PREFIX}/workspaces", tags=["workspaces"])
@@ -162,13 +166,13 @@ app.include_router(health.router, tags=["health"])
 app.include_router(api_keys.router, prefix=f"{settings.API_V1_PREFIX}", tags=["api-keys"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_PREFIX}", tags=["admin"])
 
+
 logger.info("API_ROUTES_REGISTERED", extra={"api_prefix": settings.API_V1_PREFIX})
 
 
-# -----------------------------------------------------------
-# ROOT + STATIC FIXES (favicon, robots, head requests)
-# -----------------------------------------------------------
-
+# ============================================================
+# ROOT + FIX FOR RENDER (HEAD, FAVICON, ROBOTS)
+# ============================================================
 @app.get("/")
 async def root():
     logger.debug("ROOT_ENDPOINT_ACCESSED")
@@ -179,31 +183,29 @@ async def root():
     }
 
 
-# HEAD / → éviter les 400
 @app.head("/")
 async def head_root():
     return Response(status_code=200)
 
 
-# Favicon (évite les erreurs 400)
+# Favicon path
 FAVICON_PATH = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
 
 @app.get("/favicon.ico")
 async def favicon():
     if os.path.exists(FAVICON_PATH):
         return FileResponse(FAVICON_PATH, media_type="image/x-icon")
-    return Response(status_code=204)  # pas de favicon → pas d'erreur
+    return Response(status_code=204)
 
 
-# Robots.txt (élimine encore un potentiel 400)
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
     return "User-agent: *\nDisallow: /"
 
 
-# -----------------------------------------------------------
-# RUN (LOCAL ONLY)
-# -----------------------------------------------------------
+# ============================================================
+# RUN (LOCAL DEV ONLY)
+# ============================================================
 if __name__ == "__main__":
     import uvicorn
     logger.info("STARTING_UVICORN_SERVER", extra={"host": "0.0.0.0", "port": 8000})
