@@ -10,28 +10,32 @@ logger.info("MIDDLEWARE_MODULE_LOADED", extra={"file": __file__})
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware to log all requests with request ID and timing."""
+    """Middleware to log all requests with a safe request ID (no overwrite)."""
 
     def __init__(self, app: ASGIApp):
         super().__init__(app)
         logger.info("REQUEST_LOGGING_MIDDLEWARE_INITIALIZED")
 
     async def dispatch(self, request: Request, call_next):
-        request_id = str(uuid.uuid4())
+        # ID interne, unique et non réservé
+        cm_request_id = str(uuid.uuid4())
         start_time = time.time()
 
+        # Extra log (NO reserved keys)
         log_extra = {
-            "request_id": request_id,
+            "cm_request_id": cm_request_id,
             "method": request.method,
             "path": request.url.path,
             "client_host": request.client.host if request.client else None
         }
 
+        # Sauvegarde de la factory originale
         old_factory = logging.getLogRecordFactory()
 
         def record_factory(*args, **kwargs):
             record = old_factory(*args, **kwargs)
-            record.request_id = request_id
+            # Ajout d'un champ autorisé et non réservé
+            record.cm_request_id = cm_request_id
             return record
 
         logging.setLogRecordFactory(record_factory)
@@ -50,7 +54,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
             logger.info("REQUEST_COMPLETED", extra=log_extra)
 
-            response.headers["X-Request-ID"] = request_id
+            # Expose ID pour debugging
+            response.headers["X-CM-Request-ID"] = cm_request_id
 
             return response
 
@@ -64,8 +69,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             })
 
             logger.error("REQUEST_FAILED", extra=log_extra, exc_info=True)
-
             raise
 
         finally:
+            # Restore factory
             logging.setLogRecordFactory(old_factory)
