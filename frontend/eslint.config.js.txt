@@ -1,0 +1,2 @@
+// Disable ESLint during Next.js production builds (Render compatibility)
+module.exports = {};
