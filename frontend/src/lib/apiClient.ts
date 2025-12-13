@@ -1,40 +1,33 @@
-﻿import { logger } from './logger';
+﻿async request(path: string, method = "GET", body?: any) {
+  const url = `${this.baseUrl}${path}`;
 
-export class APIClient {
-  private baseUrl: string;
+  const headers: any = {
+    "Content-Type": "application/json",
+  };
 
-  constructor() {
-    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+  const token = this.getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const options: RequestInit = {
+    method,
+    headers,
+  };
+
+  if (body) {
+    options.body = JSON.stringify(body);
   }
 
-  private async request(method: string, path: string, body?: any) {
-    const token = localStorage.getItem("token");
+  const res = await fetch(url, options);
 
-    const headers: any = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = Bearer ;
-
-    const options: any = { method, headers };
-    if (body) options.body = JSON.stringify(body);
-
-    const res = await fetch(${this.baseUrl}, options);
-
-    if (!res.ok) {
-      logger.error("API Error", { path, status: res.status });
-      throw new Error(API error: );
-    }
-
-    return res.json().catch(() => null);
+  if (!res.ok) {
+    logger.error("API Error", { path, status: res.status });
+    throw new Error(`API error: ${res.status}`);
   }
 
-  // === User Consent ===
-  async updateConsent(consents: any) {
-    return this.request("PATCH", "/users/consent", consents);
-  }
-
-  // === Export User Data ===
-  async exportUserData() {
-    return this.request("GET", "/users/export");
+  // Try JSON, fallback text
+  try {
+    return await res.json();
+  } catch {
+    return await res.text();
   }
 }
-
-export const apiClient = new APIClient();
