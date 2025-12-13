@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { logger } from '@/utils/logger';
 import { Heart } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,15 +22,20 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
-    logger.info('Login form submitted', { email });
+    // SECURITÉ : on ne loggue plus l’email
+    logger.info('Login form submitted');
 
     try {
       await login(email, password);
+
+      // Redirection propre
+      router.push('/dashboard');
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Login failed';
+      // Message neutre → protection info sensitive
+      const errorMessage = 'Authentication failed. Please check your credentials.';
       setError(errorMessage);
-      logger.error('Login error displayed to user', { error: errorMessage });
+
+      logger.error('Login error', { generic: true });
     } finally {
       setLoading(false);
     }
@@ -51,30 +59,26 @@ export default function LoginPage() {
         <div className="card">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="email" className="label">
-                Email
-              </label>
+              <label htmlFor="email" className="label">Email</label>
               <input
                 id="email"
                 type="email"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
                 className="input-field"
                 placeholder="your@email.com"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="label">
-                Password
-              </label>
+              <label htmlFor="password" className="label">Password</label>
               <input
                 id="password"
                 type="password"
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
                 className="input-field"
                 placeholder="••••••••"
               />

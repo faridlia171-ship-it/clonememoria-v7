@@ -18,24 +18,45 @@ export function MessageBubble({ message, cloneName, cloneId }: MessageBubbleProp
   const [loadingAudio, setLoadingAudio] = useState(false);
 
   const handlePlayTTS = async () => {
-    if (!cloneId || isUser) return;
+    // Guard clauses renforcées
+    if (!cloneId) {
+      logger.warn('Attempted TTS without cloneId');
+      return;
+    }
+
+    if (isUser) {
+      logger.debug('TTS skipped: user message');
+      return;
+    }
 
     setLoadingAudio(true);
+
     try {
-      logger.info('Generating TTS', { cloneId, messageId: message.id });
+      logger.info('Generating TTS', {
+        cloneId,
+        messageId: message.id ?? 'unknown',
+      });
+
       const response = await apiClient.generateTTS(cloneId, message.content);
 
-      const audioData = atob(response.audio_base64);
-      const audioArray = new Uint8Array(audioData.length);
-      for (let i = 0; i < audioData.length; i++) {
-        audioArray[i] = audioData.charCodeAt(i);
+      if (!response?.audio_base64) {
+        throw new Error('Invalid TTS response: missing audio data');
+      }
+
+      // Décodage sécurisé du base64
+      const binary = atob(response.audio_base64);
+      const audioArray = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        audioArray[i] = binary.charCodeAt(i);
       }
 
       const blob = new Blob([audioArray], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
+
       const audio = new Audio(url);
 
       setPlayingAudio(true);
+
       audio.onended = () => {
         setPlayingAudio(false);
         URL.revokeObjectURL(url);
@@ -43,9 +64,17 @@ export function MessageBubble({ message, cloneName, cloneId }: MessageBubbleProp
 
       await audio.play();
       logger.info('TTS playback started');
-    } catch (error) {
-      logger.error('Failed to play TTS', { error });
-      alert(error instanceof Error ? error.message : 'Failed to play audio');
+    } catch (error: any) {
+      logger.error('Failed to play TTS', {
+        error: error?.message ?? 'unknown',
+        stack: error?.stack ?? '',
+      });
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Une erreur est survenue lors de la lecture audio.'
+      );
     } finally {
       setLoadingAudio(false);
     }

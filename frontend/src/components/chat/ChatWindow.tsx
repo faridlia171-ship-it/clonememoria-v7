@@ -26,34 +26,47 @@ export function ChatWindow({
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Sync external messages → internal state
   useEffect(() => {
     setMessages(initialMessages);
   }, [initialMessages]);
 
+  // Auto-scroll on update
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
   };
+
+  const sanitize = (str: string) =>
+    str.replace(/[\u0000-\u001f\u007f]/g, '').trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
 
-    if (!inputValue.trim() || loading) return;
+    const cleaned = sanitize(inputValue);
+    if (!cleaned) return;
 
-    const messageContent = inputValue.trim();
-    setInputValue('');
     setLoading(true);
+    setInputValue('');
 
-    logger.info('Sending message', {
+    logger.info('chat.message.send', {
       conversationId,
-      messageLength: messageContent.length,
+      length: cleaned.length,
     });
 
     try {
-      const response = await onSendMessage(messageContent);
+      const response = await onSendMessage(cleaned);
+
+      // Sécurisation : empêcher des injections malformées
+      if (!response?.user_message || !response?.clone_message) {
+        throw new Error('Invalid response structure');
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -61,27 +74,30 @@ export function ChatWindow({
         response.clone_message,
       ]);
 
-      logger.info('Message sent and response received', {
+      logger.info('chat.message.received', {
         conversationId,
         userMessageId: response.user_message.id,
         cloneMessageId: response.clone_message.id,
       });
-    } catch (error) {
-      logger.error('Failed to send message', {
+    } catch (err) {
+      logger.error('chat.message.error', {
         conversationId,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error:
+          err instanceof Error
+            ? err.message.slice(0, 200)
+            : 'Unknown error',
       });
 
-      const errorMessage: Message = {
+      const fallback: Message = {
         id: 'error-' + Date.now(),
         conversation_id: conversationId,
         role: 'system',
         content:
-          'Sorry, there was an error sending your message. Please try again.',
+          'An error occurred while sending your message. Please try again.',
         created_at: new Date().toISOString(),
       };
 
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, fallback]);
     } finally {
       setLoading(false);
     }
@@ -89,6 +105,7 @@ export function ChatWindow({
 
   return (
     <div className="flex flex-col h-full">
+      {/* CHAT BODY */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.length === 0 ? (
           <div className="text-center py-12">
@@ -123,6 +140,7 @@ export function ChatWindow({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* INPUT BAR */}
       <div className="border-t border-cream-200 p-6 bg-white">
         <form onSubmit={handleSubmit} className="flex space-x-4">
           <input
@@ -131,11 +149,13 @@ export function ChatWindow({
             onChange={(e) => setInputValue(e.target.value)}
             disabled={loading}
             placeholder={`Message ${cloneName}...`}
+            autoComplete="off"
             className="flex-1 input-field disabled:opacity-50"
           />
+
           <button
             type="submit"
-            disabled={loading || !inputValue.trim()}
+            disabled={loading || !sanitize(inputValue)}
             className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             <Send className="w-4 h-4" />

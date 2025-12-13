@@ -20,7 +20,10 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
 
-    logger.info('Registration form submitted', { email });
+    // Log minimal sans données sensibles
+    logger.info('REGISTER_SUBMIT_ATTEMPT', {
+      hasEmail: Boolean(email),
+    });
 
     if (password.length < 8) {
       setError('Password must be at least 8 characters long');
@@ -30,13 +33,18 @@ export default function RegisterPage() {
 
     try {
       await register(email, password, fullName || undefined);
+
+      logger.info('REGISTER_SUCCESS');
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Registration failed';
-      setError(errorMessage);
-      logger.error('Registration error displayed to user', {
-        error: errorMessage,
+
+      // Log interne sécurisé
+      logger.error('REGISTER_FAILED', {
+        reason: errorMessage,
       });
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -70,6 +78,7 @@ export default function RegisterPage() {
                 onChange={(e) => setFullName(e.target.value)}
                 className="input-field"
                 placeholder="Your name"
+                autoComplete="name"
               />
             </div>
 
@@ -85,6 +94,7 @@ export default function RegisterPage() {
                 required
                 className="input-field"
                 placeholder="your@email.com"
+                autoComplete="email"
               />
             </div>
 
@@ -101,6 +111,7 @@ export default function RegisterPage() {
                 minLength={8}
                 className="input-field"
                 placeholder="At least 8 characters"
+                autoComplete="new-password"
               />
               <p className="mt-1 text-xs text-gray-500">
                 Must be at least 8 characters

@@ -25,16 +25,11 @@ export function CloneForm({
   submitLabel = 'Create Clone',
 }: CloneFormProps) {
   const [name, setName] = useState(initialData?.name || '');
-  const [description, setDescription] = useState(
-    initialData?.description || ''
-  );
-  const [warmth, setWarmth] = useState(
-    initialData?.tone_config.warmth || 0.7
-  );
-  const [humor, setHumor] = useState(initialData?.tone_config.humor || 0.5);
-  const [formality, setFormality] = useState(
-    initialData?.tone_config.formality || 0.3
-  );
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [warmth, setWarmth] = useState(initialData?.tone_config.warmth ?? 0.7);
+  const [humor, setHumor] = useState(initialData?.tone_config.humor ?? 0.5);
+  const [formality, setFormality] = useState(initialData?.tone_config.formality ?? 0.3);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,8 +44,10 @@ export function CloneForm({
         description,
         tone_config: { warmth, humor, formality },
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Unexpected error occurred while saving.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -58,10 +55,9 @@ export function CloneForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Name */}
       <div>
-        <label htmlFor="name" className="label">
-          Name
-        </label>
+        <label htmlFor="name" className="label">Name</label>
         <input
           id="name"
           type="text"
@@ -72,35 +68,32 @@ export function CloneForm({
           placeholder="e.g., Papa, Maman, Best Friend..."
           maxLength={100}
         />
-        <p className="mt-1 text-xs text-gray-500">
-          What do you call this person?
-        </p>
+        <p className="mt-1 text-xs text-gray-500">What do you call this person?</p>
       </div>
 
+      {/* Description */}
       <div>
-        <label htmlFor="description" className="label">
-          Description
-        </label>
+        <label htmlFor="description" className="label">Description</label>
         <textarea
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           className="input-field min-h-[120px] resize-y"
-          placeholder="Describe this person's personality, quirks, way of speaking..."
+          placeholder="Describe this person's personality..."
           maxLength={2000}
         />
         <p className="mt-1 text-xs text-gray-500">
-          Help the AI understand their unique personality
+          Help the AI understand their unique personality.
         </p>
       </div>
 
+      {/* Personality sliders */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium text-gray-700">
-          Personality Traits
-        </h3>
+        <h3 className="text-sm font-medium text-gray-700">Personality Traits</h3>
 
+        {/* Warmth */}
         <div>
-          <div className="flex justify-between items-center mb-2">
+          <div className="flex items-center justify-between mb-2">
             <label htmlFor="warmth" className="text-sm text-gray-600">
               Warmth & Affection
             </label>
@@ -120,6 +113,7 @@ export function CloneForm({
           />
         </div>
 
+        {/* Humor */}
         <div>
           <div className="flex justify-between items-center mb-2">
             <label htmlFor="humor" className="text-sm text-gray-600">
@@ -141,6 +135,7 @@ export function CloneForm({
           />
         </div>
 
+        {/* Formality */}
         <div>
           <div className="flex justify-between items-center mb-2">
             <label htmlFor="formality" className="text-sm text-gray-600">
@@ -163,24 +158,27 @@ export function CloneForm({
         </div>
       </div>
 
+      {/* Error block */}
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl">
           <p className="text-rose-700 text-sm">{error}</p>
         </div>
       )}
 
+      {/* Buttons */}
       <div className="flex space-x-4">
         <button
           type="submit"
           disabled={loading}
-          className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 btn-primary disabled:opacity-50"
         >
           {loading ? 'Saving...' : submitLabel}
         </button>
+
         <button
           type="button"
-          onClick={onCancel}
           disabled={loading}
+          onClick={onCancel}
           className="flex-1 btn-secondary disabled:opacity-50"
         >
           Cancel

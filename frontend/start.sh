@@ -1,15 +1,17 @@
 #!/bin/bash
 
-# CloneMemoria Frontend Startup Script
+echo "Starting CloneMemoria Frontend (Production Mode)..."
 
-echo "Starting CloneMemoria Frontend..."
-
-# Install dependencies if needed
+# Vérification des dépendances
 if [ ! -d "node_modules" ]; then
     echo "Installing dependencies..."
-    npm install
+    npm ci --omit=dev
 fi
 
-# Start the development server
-echo "Starting Next.js development server on http://localhost:3000"
-npm run dev
+# Build de production
+echo "Building Next.js..."
+npm run build
+
+# Lancement du serveur
+echo "Starting Next.js server on port 3000..."
+npm run start

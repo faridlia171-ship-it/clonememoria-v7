@@ -1,73 +1,58 @@
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+// src/utils/logger.ts
+// Front-end safe logger — Option B hardened mode
 
-interface LogData {
-  [key: string]: any;
-}
+type LogLevel = "debug" | "info" | "warn" | "error";
 
-class Logger {
-  private isDevelopment: boolean;
+// Champs sensibles à filtrer systématiquement
+const SENSITIVE_KEYS = ["password", "token", "refresh", "email", "authorization"];
 
-  constructor() {
-    this.isDevelopment = process.env.NODE_ENV === 'development';
-  }
+// Fonction de filtrage profond
+const sanitize = (data: any): any => {
+    if (!data || typeof data !== "object") return data;
 
-  private formatLog(event: string, level: LogLevel, data?: LogData): void {
+    const cleaned: any = Array.isArray(data) ? [] : {};
+
+    for (const key of Object.keys(data)) {
+        if (SENSITIVE_KEYS.includes(key.toLowerCase())) {
+            cleaned[key] = "***REDACTED***";
+        } else {
+            cleaned[key] = sanitize(data[key]);
+        }
+    }
+    return cleaned;
+};
+
+// Mode production = logs minimalistes
+const isProd = typeof window !== "undefined" && process.env.NODE_ENV === "production";
+
+function baseLog(level: LogLevel, message: string, meta?: any) {
+    const safeMeta = sanitize(meta);
+
+    if (isProd) {
+        // En production : log minimal et non verbeux
+        console[level](`[${level.toUpperCase()}] ${message}`);
+        return;
+    }
+
+    // En développement : log complet et coloré
     const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      level: level.toUpperCase(),
-      event,
-      ...data,
+    const colors: Record<LogLevel, string> = {
+        debug: "color: #7f8c8d",
+        info: "color: #2980b9",
+        warn: "color: #f39c12",
+        error: "color: #c0392b"
     };
 
-    if (this.isDevelopment) {
-      const color = this.getColorForLevel(level);
-      console.group(`%c${event}`, `color: ${color}; font-weight: bold;`);
-      console.log('Level:', level.toUpperCase());
-      console.log('Time:', timestamp);
-      if (data && Object.keys(data).length > 0) {
-        console.log('Data:', data);
-      }
-      console.groupEnd();
-    } else {
-      console.log(JSON.stringify(logEntry));
-    }
-  }
-
-  private getColorForLevel(level: LogLevel): string {
-    switch (level) {
-      case 'debug':
-        return '#9E9E9E';
-      case 'info':
-        return '#2196F3';
-      case 'warn':
-        return '#FF9800';
-      case 'error':
-        return '#F44336';
-      default:
-        return '#000000';
-    }
-  }
-
-  debug(event: string, data?: LogData): void {
-    this.formatLog(event, 'debug', data);
-  }
-
-  info(event: string, data?: LogData): void {
-    this.formatLog(event, 'info', data);
-  }
-
-  warn(event: string, data?: LogData): void {
-    this.formatLog(event, 'warn', data);
-  }
-
-  error(event: string, data?: LogData): void {
-    this.formatLog(event, 'error', data);
-  }
+    console[level](
+        `%c[${level.toUpperCase()}] ${timestamp} — ${message}`,
+        colors[level],
+        safeMeta || ""
+    );
 }
 
-export const logger = new Logger();
-
-export function log(event: string, data?: LogData): void {
-  logger.info(event, data);
-}
+export const logger = {
+    debug: (msg: string, meta?: any) => baseLog("debug", msg, meta),
+    info: (msg: string, meta?: any) => baseLog("info", msg, meta),
+    warn: (msg: string, meta?: any) => baseLog("warn", msg, meta),
+    error: (msg: string, meta?: any) => baseLog("error", msg, meta),
+};

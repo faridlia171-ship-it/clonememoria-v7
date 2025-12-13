@@ -23,10 +23,13 @@ export function MemoryForm({ onSubmit, onCancel }: MemoryFormProps) {
         title: title.trim() || undefined,
         content,
       });
+
       setTitle('');
       setContent('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Unexpected error occurred.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -34,6 +37,7 @@ export function MemoryForm({ onSubmit, onCancel }: MemoryFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Title */}
       <div>
         <label htmlFor="title" className="label">
           Title (Optional)
@@ -49,38 +53,41 @@ export function MemoryForm({ onSubmit, onCancel }: MemoryFormProps) {
         />
       </div>
 
+      {/* Content */}
       <div>
         <label htmlFor="content" className="label">
           Memory Content
         </label>
         <textarea
           id="content"
+          required
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          required
           className="input-field min-h-[200px] resize-y"
-          placeholder="Write about a moment, a conversation, a habit, anything that captures who they are..."
+          placeholder="Write a moment, a story, anything that captures who they are..."
         />
         <p className="mt-1 text-xs text-gray-500">
-          Be specific and detailed. These memories help the AI understand and
-          emulate the person.
+          Be specific and detailed. These memories help the AI behave like them.
         </p>
       </div>
 
+      {/* Error */}
       {error && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl">
           <p className="text-rose-700 text-sm">{error}</p>
         </div>
       )}
 
+      {/* Buttons */}
       <div className="flex space-x-4">
         <button
           type="submit"
           disabled={loading}
-          className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 btn-primary disabled:opacity-50"
         >
           {loading ? 'Saving...' : 'Add Memory'}
         </button>
+
         <button
           type="button"
           onClick={onCancel}

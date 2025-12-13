@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
@@ -17,43 +23,84 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/** Décodage JWT sécurisé */
+function parseJwt(token: string) {
+  try {
+    if (!token || typeof token !== 'string' || token.split('.').length !== 3)
+      return null;
+
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = atob(base64);
+
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const loginLock = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
-    logger.info('AuthProvider mounted');
-    checkAuth();
+    logger.debug('AuthProvider mounted');
+    safeCheckAuth();
   }, []);
 
-  const checkAuth = async () => {
-    const token = localStorage.getItem('access_token');
+  /** Vérification sécurisée du token */
+  const safeCheckAuth = async () => {
+    let token: string | null = null;
+
+    try {
+      token = localStorage.getItem('access_token');
+    } catch {
+      logger.error('localStorage inaccessible');
+      setLoading(false);
+      return;
+    }
 
     if (!token) {
-      logger.debug('No auth token found');
+      setLoading(false);
+      return;
+    }
+
+    const decoded = parseJwt(token);
+
+    // Token local expiré → purge
+    if (!decoded || !decoded.exp || decoded.exp * 1000 < Date.now()) {
+      logger.warn('Token expiré localement, purge…');
+      try {
+        localStorage.removeItem('access_token');
+      } catch {}
+      setUser(null);
       setLoading(false);
       return;
     }
 
     try {
-      logger.info('Checking authentication');
       const userData = await apiClient.get<User>('/api/auth/me', true);
       setUser(userData);
       logger.info('User authenticated', { userId: userData.id });
-    } catch (error) {
-      logger.error('Auth check failed', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      localStorage.removeItem('access_token');
+    } catch (err) {
+      logger.warn('Auth backend check failed, purge token');
+      try {
+        localStorage.removeItem('access_token');
+      } catch {}
       setUser(null);
     } finally {
       setLoading(false);
     }
   };
 
+  /** Connexion sécurisée */
   const login = async (email: string, password: string) => {
-    logger.info('Login attempt', { email });
+    if (loginLock.current) return;
+    loginLock.current = true;
+
+    logger.info('Login attempt');
 
     try {
       const response = await apiClient.post<TokenResponse>('/api/auth/login', {
@@ -61,27 +108,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
 
+      if (!response?.access_token || !response.user) {
+        throw new Error('Réponse login invalide');
+      }
+
       localStorage.setItem('access_token', response.access_token);
       setUser(response.user);
 
-      logger.info('Login successful', { userId: response.user.id });
-
+      logger.info('Login successful');
       router.push('/dashboard');
-    } catch (error) {
-      logger.error('Login failed', {
-        email,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      throw error;
+    } catch (err) {
+      logger.error('Login failed', err);
+      throw err;
+    } finally {
+      loginLock.current = false;
     }
   };
 
+  /** Enregistrement sécurisé */
   const register = async (
     email: string,
     password: string,
     fullName?: string
   ) => {
-    logger.info('Registration attempt', { email });
+    logger.info('Register attempt');
 
     try {
       const response = await apiClient.post<TokenResponse>(
@@ -93,45 +143,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       );
 
+      if (!response?.access_token || !response.user) {
+        throw new Error('Réponse register invalide');
+      }
+
       localStorage.setItem('access_token', response.access_token);
       setUser(response.user);
 
-      logger.info('Registration successful', { userId: response.user.id });
-
+      logger.info('Registration successful');
       router.push('/dashboard');
-    } catch (error) {
-      logger.error('Registration failed', {
-        email,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      throw error;
+    } catch (err) {
+      logger.error('Registration failed', err);
+      throw err;
     }
   };
 
+  /** Déconnexion complète et propre */
   const logout = () => {
-    logger.info('User logout', { userId: user?.id });
+    logger.info('User logout');
 
-    localStorage.removeItem('access_token');
+    try {
+      localStorage.removeItem('access_token');
+    } catch {
+      logger.warn('Impossible de nettoyer le token');
+    }
+
     setUser(null);
     router.push('/login');
   };
 
-  const value = {
-    user,
-    loading,
-    login,
-    register,
-    logout,
-    isAuthenticated: !!user,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        isAuthenticated: !!user,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 }

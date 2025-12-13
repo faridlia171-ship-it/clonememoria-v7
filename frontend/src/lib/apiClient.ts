@@ -1,9 +1,37 @@
+'use client';
+
 import { logger } from '@/utils/logger';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '') ??
+  'https://clonememoria-backend.onrender.com/api';
 
-interface RequestOptions extends RequestInit {
-  requiresAuth?: boolean;
+const DEFAULT_TIMEOUT = 15000;
+
+/** Empêche l’appel d’URL externes ou forgées */
+function sanitizePath(path: string): string {
+  if (!path) throw new Error('apiClient: chemin vide');
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    throw new Error(
+      'apiClient: usage direct URL interdit (sécurité). Utiliser des chemins relatifs.'
+    );
+  }
+  return path.replace(/^\/+/, '');
+}
+
+/** Timeout sécurisé */
+function withTimeout<T>(promise: Promise<T>, ms = DEFAULT_TIMEOUT): Promise<T> {
+  let timer: NodeJS.Timeout;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Requête expirée après ${ms}ms`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() =>
+    clearTimeout(timer)
+  );
 }
 
 class APIClient {
@@ -11,178 +39,124 @@ class APIClient {
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
-    logger.info('APIClient initialized', { baseUrl });
   }
 
-  private getAuthToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('access_token');
+  private getToken(): string | null {
+    try {
+      return localStorage.getItem('access_token');
+    } catch {
+      return null;
+    }
+  }
+
+  private buildHeaders(auth: boolean): HeadersInit {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-Client': 'CloneMemoria-Frontend',
+      'cm-request-id': crypto.randomUUID(),
+    };
+
+    if (auth) {
+      const token = this.getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return headers;
   }
 
   private async request<T>(
-    endpoint: string,
-    options: RequestOptions = {}
+    path: string,
+    options: RequestInit,
+    auth = false
   ): Promise<T> {
-    const { requiresAuth = false, ...fetchOptions } = options;
-    const url = `${this.baseUrl}${endpoint}`;
-    const startTime = Date.now();
+    const safe = sanitizePath(path);
+    const url = `${this.baseUrl}/${safe}`;
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+    const finalOptions: RequestInit = {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        ...this.buildHeaders(auth),
+      },
     };
 
-    if (fetchOptions.headers) {
-      Object.assign(headers, fetchOptions.headers);
-    }
+    logger.debug('API Request', { url, method: options.method });
 
-    if (requiresAuth) {
-      const token = this.getAuthToken();
-      if (!token) {
-        logger.error('API request requires auth but no token found', {
-          endpoint,
-        });
-        throw new Error('Authentication required');
-      }
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const response = await withTimeout(fetch(url, finalOptions));
 
-    logger.debug('API request started', {
-      method: fetchOptions.method || 'GET',
-      url,
-      requiresAuth,
-    });
-
+    let data: any = null;
     try {
-      const response = await fetch(url, {
-        ...fetchOptions,
-        headers,
-      });
+      data = await response.json();
+    } catch {
+      logger.warn('Réponse non JSON', { url });
+    }
 
-      const elapsedTime = Date.now() - startTime;
+    if (!response.ok) {
+      const errMessage =
+        data?.message ||
+        data?.error ||
+        `Erreur API (${response.status}) sur ${url}`;
 
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
+      if (response.status === 401) {
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.detail || errorData.message || errorMessage;
-        } catch {
-          errorMessage = response.statusText || errorMessage;
-        }
-
-        logger.error('API request failed', {
-          url,
-          status: response.status,
-          statusText: response.statusText,
-          errorMessage,
-          elapsedTime,
-        });
-
-        throw new Error(errorMessage);
+          localStorage.removeItem('access_token');
+        } catch {}
       }
 
-      const data = await response.json();
-
-      logger.info('API request completed', {
-        url,
+      logger.error('API Error', {
         status: response.status,
-        elapsedTime: `${elapsedTime}ms`,
-      });
-
-      return data as T;
-    } catch (error) {
-      const elapsedTime = Date.now() - startTime;
-
-      logger.error('API request error', {
         url,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        elapsedTime,
+        message: errMessage,
       });
 
-      throw error;
+      throw new Error(errMessage);
     }
+
+    return data as T;
   }
 
-  async get<T>(endpoint: string, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'GET',
-      requiresAuth,
-    });
+  public get<T>(path: string, auth = false): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'GET',
+      },
+      auth
+    );
   }
 
-  async post<T>(
-    endpoint: string,
-    data: any,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(data),
-      requiresAuth,
-    });
+  public post<T>(path: string, body?: any, auth = false): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'POST',
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      auth
+    );
   }
 
-  async put<T>(
-    endpoint: string,
-    data: any,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-      requiresAuth,
-    });
+  public put<T>(path: string, body?: any, auth = false): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'PUT',
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      auth
+    );
   }
 
-  async patch<T>(
-    endpoint: string,
-    data: any,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-      requiresAuth,
-    });
-  }
-
-  async delete<T>(endpoint: string, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'DELETE',
-      requiresAuth,
-    });
-  }
-
-  async updateConsent(consents: any): Promise<any> {
-    return this.patch('/api/v1/auth/me/consent', consents, true);
-  }
-
-  async exportUserData(): Promise<any> {
-    return this.get('/api/v1/auth/me/export', true);
-  }
-
-  async deleteUserData(): Promise<any> {
-    return this.delete('/api/v1/auth/me/data', true);
-  }
-
-  async getBillingPlan(): Promise<any> {
-    return this.get('/api/v1/billing/plan', true);
-  }
-
-  async getBillingUsage(): Promise<any> {
-    return this.get('/api/v1/billing/usage', true);
-  }
-
-  async createCheckout(plan: string): Promise<any> {
-    return this.post(`/api/v1/billing/checkout?plan=${plan}`, {}, true);
-  }
-
-  async generateTTS(cloneId: string, text: string, voiceId?: string): Promise<any> {
-    return this.post(`/api/v1/audio/tts/${cloneId}`, { text, voice_id: voiceId }, true);
-  }
-
-  async generateAvatar(cloneId: string, text: string, voice?: string, style?: string): Promise<any> {
-    return this.post(`/api/v1/avatar/generate/${cloneId}`, { text, voice, style }, true);
+  public delete<T>(path: string, auth = false): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'DELETE',
+      },
+      auth
+    );
   }
 }
 
-export const apiClient = new APIClient(API_BASE_URL);
+export const apiClient = new APIClient(API_BASE);
