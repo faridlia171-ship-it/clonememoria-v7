@@ -1,53 +1,39 @@
-class APIClient {
+﻿import { logger } from './logger';
+
+export class APIClient {
   private baseUrl: string;
 
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
   }
 
-  private async request(path: string, options: RequestInit = {}) {
-    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+  private async request(method: string, path: string, body?: any) {
+    const token = localStorage.getItem("token");
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+    const headers: any = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = Bearer ;
 
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+    const options: any = { method, headers };
+    if (body) options.body = JSON.stringify(body);
+
+    const res = await fetch(${this.baseUrl}, options);
+
+    if (!res.ok) {
+      logger.error("API Error", { path, status: res.status });
+      throw new Error(API error: );
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return response.json();
+    return res.json().catch(() => null);
   }
 
-  async get(path: string) {
-    return this.request(path, { method: "GET" });
-  }
-
-  async post(path: string, body: any) {
-    return this.request(path, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-  }
-
-  async patch(path: string, body: any) {
-    return this.request(path, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
-  }
-
+  // === User Consent ===
   async updateConsent(consents: any) {
-    return this.patch("/users/consent", consents);
+    return this.request("PATCH", "/users/consent", consents);
+  }
+
+  // === Export User Data ===
+  async exportUserData() {
+    return this.request("GET", "/users/export");
   }
 }
 
