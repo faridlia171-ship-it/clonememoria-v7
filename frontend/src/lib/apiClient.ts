@@ -34,7 +34,9 @@ function withTimeout<T>(promise: Promise<T>, ms = DEFAULT_TIMEOUT): Promise<T> {
   );
 }
 
-class APIClient {
+class APIClient {\n  async updateConsent(consents: any) {
+    return this.patch("/users/consent", consents);
+  }
   private baseUrl: string;
 
   constructor(baseUrl: string) {
