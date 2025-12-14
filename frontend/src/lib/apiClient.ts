@@ -2,7 +2,6 @@
 import type {
   UsageStats,
   BillingQuota,
-  User,
   TTSResponse,
   Clone,
   Conversation,
@@ -25,6 +24,10 @@ class APIClient {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     logger.info('APIClient initialized', { baseUrl: this.baseUrl });
   }
+
+  /* =======================
+     CORE
+  ======================= */
 
   private getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -65,10 +68,6 @@ class APIClient {
     return (await response.json()) as T;
   }
 
-  // =========================
-  // 🔹 PUBLIC HTTP HELPERS
-  // =========================
-
   get<T>(endpoint: string, auth = false): Promise<T> {
     return this.request<T>(endpoint, { method: 'GET', requiresAuth: auth });
   }
@@ -81,9 +80,13 @@ class APIClient {
     });
   }
 
-  // =========================
-  // 🔹 CLONES
-  // =========================
+  /* =======================
+     CLONES (FLAT API)
+  ======================= */
+
+  listClones(): Promise<Clone[]> {
+    return this.get<Clone[]>(`${API_PREFIX}/clones`, true);
+  }
 
   getCloneById(cloneId: string): Promise<Clone> {
     return this.get<Clone>(`${API_PREFIX}/clones/${cloneId}`, true);
@@ -96,10 +99,7 @@ class APIClient {
     );
   }
 
-  createConversation(
-    cloneId: string,
-    title: string
-  ): Promise<Conversation> {
+  createConversation(cloneId: string, title: string): Promise<Conversation> {
     return this.post<Conversation>(
       `${API_PREFIX}/clones/${cloneId}/conversations`,
       { title },
@@ -107,25 +107,9 @@ class APIClient {
     );
   }
 
-  getMessages(
-    cloneId: string,
-    conversationId: string
-  ): Promise<Message[]> {
+  getMessages(cloneId: string, conversationId: string): Promise<Message[]> {
     return this.get<Message[]>(
       `${API_PREFIX}/clones/${cloneId}/conversations/${conversationId}/messages`,
-      true
-    );
-  }
-
-  /**
-   * Alias pour compatibilité avec le front
-   * (évite de casser l’existant)
-   */
-  getConversationMessages(conversationId: string): Promise<Message[]> {
-    logger.info('getConversationMessages alias called', { conversationId });
-    // ⚠️ le cloneId est déjà connu côté backend via la conversation
-    return this.get<Message[]>(
-      `${API_PREFIX}/conversations/${conversationId}/messages`,
       true
     );
   }
@@ -142,9 +126,20 @@ class APIClient {
     );
   }
 
-  // =========================
-  // 🔹 BILLING
-  // =========================
+  /* =======================
+     CLONES (NAMESPACED API — COMPAT FRONT)
+  ======================= */
+
+  clones = {
+    list: async (): Promise<Clone[]> => {
+      logger.info('apiClient.clones.list called');
+      return this.listClones();
+    },
+  };
+
+  /* =======================
+     BILLING
+  ======================= */
 
   getBillingPlan(): Promise<BillingQuota> {
     return this.get<BillingQuota>(`${API_PREFIX}/billing/plan`, true);
@@ -162,9 +157,9 @@ class APIClient {
     );
   }
 
-  // =========================
-  // 🔹 AUDIO
-  // =========================
+  /* =======================
+     AUDIO
+  ======================= */
 
   generateTTS(
     cloneId: string,
@@ -178,22 +173,19 @@ class APIClient {
     );
   }
 
-  // =========================
-  // 🔹 ACCOUNT (STUBS TEMPORAIRES)
-  // =========================
+  /* =======================
+     ACCOUNT (STUBS)
+  ======================= */
 
-  updateConsent(_consents: unknown): Promise<void> {
-    logger.warn('updateConsent called (stubbed)');
+  updateConsent(): Promise<void> {
     return Promise.resolve();
   }
 
   exportUserData(): Promise<Record<string, unknown>> {
-    logger.warn('exportUserData called (stubbed)');
     return Promise.resolve({});
   }
 
   deleteUserData(): Promise<void> {
-    logger.warn('deleteUserData called (stubbed)');
     return Promise.resolve();
   }
 }
