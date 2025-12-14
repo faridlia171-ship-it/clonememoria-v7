@@ -1,4 +1,5 @@
-﻿import logger from "@/utils/logger";
+﻿// src/lib/apiClient.ts
+import logger from "@/utils/logger";
 
 class APIClient {
   constructor(private baseUrl: string) {}
@@ -6,13 +7,18 @@ class APIClient {
   async request(path: string, method = "GET", body?: any) {
     const url = `${this.baseUrl}${path}`;
 
-    const headers: any = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
     const token =
-      typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+      typeof window !== "undefined"
+        ? localStorage.getItem("token")
+        : null;
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
 
     const res = await fetch(url, {
       method,
@@ -22,7 +28,7 @@ class APIClient {
 
     if (!res.ok) {
       const errorText = await res.text();
-      logger.error("API error:", errorText);
+      logger.error("API error", { url, method, errorText });
       throw new Error(errorText);
     }
 
@@ -49,14 +55,14 @@ class APIClient {
     return this.request(path, "DELETE");
   }
 
-  // ---------- FIX ICI ----------
-  updateConsent(consents: Record<string, boolean>) {
-    return this.post(`/users/me/consent`, consents);
+  // Consentement : pas de userId → backend récupère depuis token JWT
+  updateConsent(consent: Record<string, boolean>) {
+    return this.post(`/users/me/consent`, consent);
   }
-  // -------------------------------
 
-  exportUserData(userId: string) {
-    return this.get(`/users/${userId}/export`);
+  // Export données personnelles
+  exportUserData() {
+    return this.get(`/users/me/export`);
   }
 }
 
