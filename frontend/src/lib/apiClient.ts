@@ -117,6 +117,19 @@ class APIClient {
     );
   }
 
+  /**
+   * Alias pour compatibilité avec le front
+   * (évite de casser l’existant)
+   */
+  getConversationMessages(conversationId: string): Promise<Message[]> {
+    logger.info('getConversationMessages alias called', { conversationId });
+    // ⚠️ le cloneId est déjà connu côté backend via la conversation
+    return this.get<Message[]>(
+      `${API_PREFIX}/conversations/${conversationId}/messages`,
+      true
+    );
+  }
+
   sendMessage(
     cloneId: string,
     conversationId: string,
@@ -166,28 +179,19 @@ class APIClient {
   }
 
   // =========================
-  // 🔹 ACCOUNT (STUBS TEMPORAIRES — PHASE 1)
+  // 🔹 ACCOUNT (STUBS TEMPORAIRES)
   // =========================
 
-  /**
-   * TEMPORAIRE — sauvegarde des consentements non câblée backend.
-   */
   updateConsent(_consents: unknown): Promise<void> {
     logger.warn('updateConsent called (stubbed)');
     return Promise.resolve();
   }
 
-  /**
-   * TEMPORAIRE — export des données utilisateur non câblé backend.
-   */
   exportUserData(): Promise<Record<string, unknown>> {
     logger.warn('exportUserData called (stubbed)');
     return Promise.resolve({});
   }
 
-  /**
-   * TEMPORAIRE — suppression des données utilisateur non câblée backend.
-   */
   deleteUserData(): Promise<void> {
     logger.warn('deleteUserData called (stubbed)');
     return Promise.resolve();
