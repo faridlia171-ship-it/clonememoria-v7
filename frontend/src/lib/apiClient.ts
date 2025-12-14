@@ -7,6 +7,7 @@ import type {
   Conversation,
   Message,
   ChatResponse,
+  CloneWithStats,
 } from '@/types';
 
 const API_BASE_URL =
@@ -81,28 +82,39 @@ class APIClient {
   }
 
   /* =======================
-     CLONES (FLAT API)
+     CLONES (FLAT)
   ======================= */
 
   listClones(): Promise<Clone[]> {
     return this.get<Clone[]>(`${API_PREFIX}/clones`, true);
   }
 
-  getCloneById(cloneId: string): Promise<Clone> {
-    return this.get<Clone>(`${API_PREFIX}/clones/${cloneId}`, true);
-  }
+  /* =======================
+     CLONES (FRONT COMPAT)
+  ======================= */
+
+  clones = {
+    list: async (): Promise<CloneWithStats[]> => {
+      logger.info('apiClient.clones.list called');
+
+      const clones = await this.listClones();
+
+      // 🔒 Adaptation temporaire pour satisfaire le front
+      return clones.map((clone) => ({
+        ...clone,
+        memory_count: 0,
+        conversation_count: 0,
+      }));
+    },
+  };
+
+  /* =======================
+     CONVERSATIONS / MESSAGES
+  ======================= */
 
   getCloneConversations(cloneId: string): Promise<Conversation[]> {
     return this.get<Conversation[]>(
       `${API_PREFIX}/clones/${cloneId}/conversations`,
-      true
-    );
-  }
-
-  createConversation(cloneId: string, title: string): Promise<Conversation> {
-    return this.post<Conversation>(
-      `${API_PREFIX}/clones/${cloneId}/conversations`,
-      { title },
       true
     );
   }
@@ -112,6 +124,10 @@ class APIClient {
       `${API_PREFIX}/clones/${cloneId}/conversations/${conversationId}/messages`,
       true
     );
+  }
+
+  getConversationMessages(_conversationId: string): Promise<Message[]> {
+    return Promise.resolve([]);
   }
 
   sendMessage(
@@ -127,32 +143,7 @@ class APIClient {
   }
 
   /* =======================
-     COMPAT FRONT (ALIASES)
-  ======================= */
-
-  clones = {
-    list: async (): Promise<Clone[]> => {
-      logger.info('apiClient.clones.list called');
-      return this.listClones();
-    },
-  };
-
-  /**
-   * Alias attendu par le front (/clones/[id]/chat)
-   * TEMPORAIRE jusqu’à unifier le contrat API
-   */
-  getConversationMessages(conversationId: string): Promise<Message[]> {
-    logger.warn('getConversationMessages called (compat alias)', {
-      conversationId,
-    });
-
-    // ⚠️ le cloneId réel sera injecté plus tard via contexte
-    // pour l’instant on ne casse PAS le build
-    return Promise.resolve([]);
-  }
-
-  /* =======================
-     BILLING
+     BILLING / AUDIO / ACCOUNT
   ======================= */
 
   getBillingPlan(): Promise<BillingQuota> {
@@ -162,18 +153,6 @@ class APIClient {
   getBillingUsage(): Promise<UsageStats> {
     return this.get<UsageStats>(`${API_PREFIX}/billing/usage`, true);
   }
-
-  createCheckout(plan: string): Promise<{ checkout_url: string }> {
-    return this.post<{ checkout_url: string }>(
-      `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
-      {},
-      true
-    );
-  }
-
-  /* =======================
-     AUDIO
-  ======================= */
 
   generateTTS(
     cloneId: string,
@@ -187,11 +166,7 @@ class APIClient {
     );
   }
 
-  /* =======================
-     ACCOUNT (STUBS)
-  ======================= */
-
-  updateConsent(_consents: unknown): Promise<void> {
+  updateConsent(): Promise<void> {
     return Promise.resolve();
   }
 
