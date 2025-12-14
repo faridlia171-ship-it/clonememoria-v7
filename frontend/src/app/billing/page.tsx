@@ -1,177 +1,144 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
-import type { User, TTSResponse } from '@/types';
+import { useRouter } from 'next/navigation';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX || '/api';
-
-interface RequestOptions extends RequestInit {
-  requiresAuth?: boolean;
+interface PlanDetails {
+  name: string;
+  price: number;
+  messages_limit: number;
+  clones_limit: number;
+  documents_limit: number;
 }
 
-class APIClient {
-  private baseUrl: string;
+interface BillingPlan {
+  current_plan: string;
+  plan_details: PlanDetails;
+  period_start: string | null;
+  period_end: string | null;
+  is_dummy_mode: boolean;
+}
 
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
-    logger.info('APIClient initialized', { baseUrl: this.baseUrl });
-  }
+interface UsageStats {
+  current_period: {
+    clones: number;
+    documents: number;
+    messages: number;
+  };
+  today: {
+    messages_count: number;
+    tokens_used: number;
+    tts_requests: number;
+    avatar_requests: number;
+  };
+  timestamp: string;
+}
 
-  private getAuthToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('access_token');
-  }
+export default function BillingPage() {
+  const { user } = useAuth();
+  const router = useRouter();
 
-  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-    const { requiresAuth = false, ...fetchOptions } = options;
+  const [loading, setLoading] = useState(true);
+  const [upgrading, setUpgrading] = useState(false);
+  const [plan, setPlan] = useState<BillingPlan | null>(null);
+  const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    const url = `${this.baseUrl}${normalizedEndpoint}`;
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (fetchOptions.headers) {
-      Object.assign(headers, fetchOptions.headers as Record<string, string>);
+  useEffect(() => {
+    if (!user) {
+      router.push('/login');
+      return;
     }
+    void fetchBillingData();
+  }, [user, router]);
 
-    if (requiresAuth) {
-      const token = this.getAuthToken();
-      if (!token) {
-        throw new Error('Authentication required');
-      }
-      headers.Authorization = `Bearer ${token}`;
-    }
-
+  const fetchBillingData = async () => {
+    setLoading(true);
     try {
-      const response = await fetch(url, {
-        ...fetchOptions,
-        headers,
+      const [planData, usageData] = await Promise.all([
+        apiClient.getBillingPlan(),
+        apiClient.getBillingUsage(),
+      ]);
+
+      setPlan(planData as BillingPlan);
+      setUsage(usageData as UsageStats);
+
+      logger.info('Billing data fetched', {
+        plan: planData?.current_plan ?? 'unknown',
       });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData?.detail || errorData?.message || errorMessage;
-        } catch {
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      if (response.status === 204) {
-        return undefined as unknown as T;
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const txt = await response.text();
-        return txt as unknown as T;
-      }
-
-      return (await response.json()) as T;
-    } catch (error) {
-      logger.error('API request error', { error });
-      throw error;
+    } catch (err) {
+      logger.error('Failed to fetch billing data', { error: err });
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Unable to load billing information',
+      });
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleUpgrade = async (targetPlan: string) => {
+    setUpgrading(true);
+    setMessage(null);
+    try {
+      const result = await apiClient.createCheckout(targetPlan);
+      setMessage({
+        type: 'success',
+        text: result?.message ?? 'Redirecting to checkout…',
+      });
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Upgrade failed',
+      });
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading billing information…</div>;
   }
 
-  private get<T>(endpoint: string, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET', requiresAuth });
+  if (!plan || !usage) {
+    return <div className="p-8 text-center text-red-600">Failed to load billing data</div>;
   }
 
-  private post<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(data ?? {}),
-      requiresAuth,
-    });
-  }
+  return (
+    <div className="p-8 max-w-5xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">Billing & Usage</h1>
 
-  private patch<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PATCH',
-      body: JSON.stringify(data ?? {}),
-      requiresAuth,
-    });
-  }
+      {message && (
+        <div className={`mb-4 ${message.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+          {message.text}
+        </div>
+      )}
 
-  private delete<T>(endpoint: string, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, { method: 'DELETE', requiresAuth });
-  }
+      <div className="bg-white shadow rounded p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Current Plan</h2>
+        <p className="text-lg">{plan.plan_details.name}</p>
+        <p>${plan.plan_details.price}/month</p>
 
-  // --------------------
-  // Account / RGPD
-  // --------------------
+        {plan.current_plan === 'free' && (
+          <button
+            onClick={() => handleUpgrade('pro')}
+            disabled={upgrading}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+          >
+            {upgrading ? 'Processing…' : 'Upgrade to Pro'}
+          </button>
+        )}
+      </div>
 
-  updateConsent(consents: Partial<User>): Promise<User> {
-    return this.patch<User>(`${API_PREFIX}/auth/me/consent`, consents, true);
-  }
-
-  exportUserData(): Promise<{ exported_at: string; data: unknown }> {
-    return this.get<{ exported_at: string; data: unknown }>(
-      `${API_PREFIX}/auth/me/export`,
-      true
-    );
-  }
-
-  deleteUserData(): Promise<{ status: 'ok' }> {
-    return this.delete<{ status: 'ok' }>(
-      `${API_PREFIX}/auth/me/data`,
-      true
-    );
-  }
-
-  // --------------------
-  // Billing (TEMPORAIREMENT NON TYPÉ – UI DRIVEN)
-  // --------------------
-
-  getBillingPlan(): Promise<any> {
-    return this.get<any>(`${API_PREFIX}/billing/plan`, true);
-  }
-
-  getBillingUsage(): Promise<any> {
-    return this.get<any>(`${API_PREFIX}/billing/usage`, true);
-  }
-
-  createCheckout(plan: string): Promise<any> {
-    return this.post<any>(
-      `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
-      {},
-      true
-    );
-  }
-
-  // --------------------
-  // Audio / Avatar
-  // --------------------
-
-  generateTTS(
-    cloneId: string,
-    text: string,
-    voiceId?: string
-  ): Promise<TTSResponse> {
-    return this.post<TTSResponse>(
-      `${API_PREFIX}/audio/tts/${encodeURIComponent(cloneId)}`,
-      { text, voice_id: voiceId },
-      true
-    );
-  }
-
-  generateAvatar(
-    cloneId: string,
-    text: string,
-    voice?: string,
-    style?: string
-  ): Promise<{ avatar_image_url: string; message: string }> {
-    return this.post<{ avatar_image_url: string; message: string }>(
-      `${API_PREFIX}/avatar/generate/${encodeURIComponent(cloneId)}`,
-      { text, voice, style },
-      true
-    );
-  }
+      <button
+        onClick={() => router.push('/dashboard')}
+        className="text-blue-600 underline"
+      >
+        ← Back to Dashboard
+      </button>
+    </div>
+  );
 }
-
-export const apiClient = new APIClient(API_BASE_URL);
-export default apiClient;
