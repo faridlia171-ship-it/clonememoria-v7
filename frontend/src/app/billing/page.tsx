@@ -45,7 +45,8 @@ export default function BillingPage() {
   const [upgrading, setUpgrading] = useState(false);
   const [plan, setPlan] = useState<BillingPlan | null>(null);
   const [usage, setUsage] = useState<UsageStats | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] =
+    useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -64,17 +65,22 @@ export default function BillingPage() {
       ]);
 
       // Cast volontaire et assumé (backend non aligné pour l’instant)
-      setPlan(planData as unknown as BillingPlan);
-      setUsage(usageData as unknown as UsageStats);
+      const typedPlan = planData as unknown as BillingPlan;
+      const typedUsage = usageData as unknown as UsageStats;
 
-      logger.info('Billing data fetched', {
-        plan: planData?.current_plan ?? 'unknown',
+      setPlan(typedPlan);
+      setUsage(typedUsage);
+
+      logger.info('Billing data fetched (frontend contract)', {
+        plan: typedPlan.current_plan,
       });
     } catch (err) {
       logger.error('Failed to fetch billing data', { error: err });
       setMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Unable to load billing information',
+        text: err instanceof Error
+          ? err.message
+          : 'Unable to load billing information',
       });
     } finally {
       setLoading(false);
@@ -105,7 +111,11 @@ export default function BillingPage() {
   }
 
   if (!plan || !usage) {
-    return <div className="p-8 text-center text-red-600">Failed to load billing data</div>;
+    return (
+      <div className="p-8 text-center text-red-600">
+        Failed to load billing data
+      </div>
+    );
   }
 
   return (
@@ -113,7 +123,11 @@ export default function BillingPage() {
       <h1 className="text-3xl font-bold mb-6">Billing & Usage</h1>
 
       {message && (
-        <div className={`mb-4 ${message.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+        <div
+          className={`mb-4 ${
+            message.type === 'error' ? 'text-red-600' : 'text-green-600'
+          }`}
+        >
           {message.text}
         </div>
       )}
