@@ -179,11 +179,18 @@ class APIClient {
 
   /**
    * TEMPORAIRE — export des données utilisateur non câblé backend.
-   * Retourne un objet vide pour permettre à l’UI de fonctionner.
    */
   exportUserData(): Promise<Record<string, unknown>> {
     logger.warn('exportUserData called (stubbed)');
     return Promise.resolve({});
+  }
+
+  /**
+   * TEMPORAIRE — suppression des données utilisateur non câblée backend.
+   */
+  deleteUserData(): Promise<void> {
+    logger.warn('deleteUserData called (stubbed)');
+    return Promise.resolve();
   }
 }
 
