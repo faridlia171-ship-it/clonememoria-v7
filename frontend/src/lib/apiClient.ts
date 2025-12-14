@@ -1,17 +1,7 @@
 ﻿import { logger } from '@/utils/logger';
-import type {
-  UsageStats,
-  BillingQuota,
-  User,
-  TTSResponse,
-  Clone,
-  Conversation,
-  Message,
-  ChatResponse,
-} from '@/types';
+import type { UsageStats, BillingQuota, User, TTSResponse } from '@/types';
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX || '/api';
 
 interface RequestOptions extends RequestInit {
@@ -25,10 +15,6 @@ class APIClient {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     logger.info('APIClient initialized', { baseUrl: this.baseUrl });
   }
-
-  // --------------------
-  // Core helpers
-  // --------------------
 
   private getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -73,9 +59,7 @@ class APIClient {
         try {
           const errorData = await response.json();
           errorMessage =
-            errorData?.detail ||
-            errorData?.message ||
-            errorMessage;
+            errorData?.detail || errorData?.message || errorMessage;
         } catch {
           errorMessage = response.statusText || errorMessage;
         }
@@ -99,13 +83,17 @@ class APIClient {
     }
   }
 
-  private get<T>(endpoint: string, requiresAuth = false): Promise<T> {
+  // =====================
+  // HTTP PUBLIC METHODS
+  // =====================
+
+  public get<T>(endpoint: string, requiresAuth = false): Promise<T> {
     return this.request<T>(endpoint, { method: 'GET', requiresAuth });
   }
 
-  private post<T>(
+  public post<T>(
     endpoint: string,
-    data: unknown,
+    data?: unknown,
     requiresAuth = false
   ): Promise<T> {
     return this.request<T>(endpoint, {
@@ -115,9 +103,9 @@ class APIClient {
     });
   }
 
-  private patch<T>(
+  public patch<T>(
     endpoint: string,
-    data: unknown,
+    data?: unknown,
     requiresAuth = false
   ): Promise<T> {
     return this.request<T>(endpoint, {
@@ -127,14 +115,8 @@ class APIClient {
     });
   }
 
-  private delete<T>(
-    endpoint: string,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'DELETE',
-      requiresAuth,
-    });
+  public delete<T>(endpoint: string, requiresAuth = false): Promise<T> {
+    return this.request<T>(endpoint, { method: 'DELETE', requiresAuth });
   }
 
   // --------------------
@@ -142,25 +124,15 @@ class APIClient {
   // --------------------
 
   updateConsent(consents: Partial<User>): Promise<User> {
-    return this.patch(
-      `${API_PREFIX}/auth/me/consent`,
-      consents,
-      true
-    );
+    return this.patch<User>(`${API_PREFIX}/auth/me/consent`, consents, true);
   }
 
   exportUserData(): Promise<{ exported_at: string; data: unknown }> {
-    return this.get(
-      `${API_PREFIX}/auth/me/export`,
-      true
-    );
+    return this.get(`${API_PREFIX}/auth/me/export`, true);
   }
 
   deleteUserData(): Promise<{ status: 'ok' }> {
-    return this.delete(
-      `${API_PREFIX}/auth/me/data`,
-      true
-    );
+    return this.delete(`${API_PREFIX}/auth/me/data`, true);
   }
 
   // --------------------
@@ -168,84 +140,17 @@ class APIClient {
   // --------------------
 
   getBillingPlan(): Promise<BillingQuota> {
-    return this.get(
-      `${API_PREFIX}/billing/plan`,
-      true
-    );
+    return this.get(`${API_PREFIX}/billing/plan`, true);
   }
 
   getBillingUsage(): Promise<UsageStats> {
-    return this.get(
-      `${API_PREFIX}/billing/usage`,
-      true
-    );
+    return this.get(`${API_PREFIX}/billing/usage`, true);
   }
 
   createCheckout(plan: string): Promise<{ checkout_url: string }> {
     return this.post(
       `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
       {},
-      true
-    );
-  }
-
-  // --------------------
-  // Clones / Chat
-  // --------------------
-
-  getCloneById(cloneId: string): Promise<Clone> {
-    return this.get(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}`,
-      true
-    );
-  }
-
-  getCloneConversations(cloneId: string): Promise<Conversation[]> {
-    return this.get(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}/conversations`,
-      true
-    );
-  }
-
-  createConversation(
-    cloneId: string,
-    title: string
-  ): Promise<Conversation> {
-    return this.post(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}/conversations`,
-      { title },
-      true
-    );
-  }
-
-  getConversationMessages(
-    conversationId: string
-  ): Promise<Message[]> {
-    return this.get(
-      `${API_PREFIX}/conversations/${encodeURIComponent(conversationId)}/messages`,
-      true
-    );
-  }
-
-  sendMessage(
-    cloneId: string,
-    conversationId: string,
-    content: string
-  ): Promise<ChatResponse> {
-    return this.post(
-      `${API_PREFIX}/clones/${encodeURIComponent(
-        cloneId
-      )}/conversations/${encodeURIComponent(
-        conversationId
-      )}/messages`,
-      { content },
-      true
-    );
-  }
-
-  getCloneMemories(cloneId: string): Promise<Message[]> {
-    return this.get(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}/memories`,
       true
     );
   }
