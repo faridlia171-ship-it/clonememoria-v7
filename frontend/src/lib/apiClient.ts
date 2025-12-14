@@ -82,16 +82,12 @@ class APIClient {
   }
 
   /* =======================
-     CLONES (FLAT)
+     CLONES
   ======================= */
 
   listClones(): Promise<Clone[]> {
     return this.get<Clone[]>(`${API_PREFIX}/clones`, true);
   }
-
-  /* =======================
-     CLONES (FRONT COMPAT)
-  ======================= */
 
   clones = {
     list: async (): Promise<CloneWithStats[]> => {
@@ -99,7 +95,6 @@ class APIClient {
 
       const clones = await this.listClones();
 
-      // 🔒 Adaptation temporaire pour satisfaire le front
       return clones.map((clone) => ({
         ...clone,
         memory_count: 0,
@@ -143,7 +138,7 @@ class APIClient {
   }
 
   /* =======================
-     BILLING / AUDIO / ACCOUNT
+     BILLING / AUDIO
   ======================= */
 
   getBillingPlan(): Promise<BillingQuota> {
@@ -166,7 +161,12 @@ class APIClient {
     );
   }
 
-  updateConsent(): Promise<void> {
+  /* =======================
+     ACCOUNT (STUBS ALIGNÉS)
+  ======================= */
+
+  updateConsent(_consents: unknown): Promise<void> {
+    logger.info('updateConsent called (stub)', _consents);
     return Promise.resolve();
   }
 
