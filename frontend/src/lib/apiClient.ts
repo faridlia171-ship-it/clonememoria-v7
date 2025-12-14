@@ -36,7 +36,9 @@ class APIClient {
     options: RequestOptions = {}
   ): Promise<T> {
     const { requiresAuth = false, ...fetchOptions } = options;
-    const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const url = `${this.baseUrl}${
+      endpoint.startsWith('/') ? endpoint : `/${endpoint}`
+    }`;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -161,6 +163,18 @@ class APIClient {
       { text, voice_id: voiceId },
       true
     );
+  }
+
+  // =========================
+  // 🔹 ACCOUNT / CONSENT (STUB TEMPORAIRE)
+  // =========================
+  /**
+   * TEMPORAIRE — permet de passer le build sans modifier le backend.
+   * La logique réelle sera branchée une fois le contrat API validé.
+   */
+  updateConsent(_consents: unknown): Promise<void> {
+    logger.warn('updateConsent called (stubbed, no backend call)');
+    return Promise.resolve();
   }
 }
 
