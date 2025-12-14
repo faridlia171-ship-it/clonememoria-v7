@@ -1,277 +1,112 @@
-﻿import { logger } from '@/utils/logger';
-import type {
-  UsageStats,
-  BillingQuota,
-  User,
-  TTSResponse,
-  Clone,
-  Conversation,
-  Message,
-  ChatResponse,
-} from '@/types';
+﻿'use client';
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX || '/api';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { AppLayout } from '@/components/layout/AppLayout';
+import apiClient from '@/lib/apiClient';
+import { logger } from '@/utils/logger';
+import { Clone, Message } from '@/types';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
-interface RequestOptions extends RequestInit {
-  requiresAuth?: boolean;
-}
+export default function CloneMemoriesPage() {
+  const params = useParams();
+  const cloneId = params?.id as string | undefined;
 
-class APIClient {
-  private baseUrl: string;
+  const [clone, setClone] = useState<Clone | null>(null);
+  const [memories, setMemories] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
-    logger.info('APIClient initialized', { baseUrl: this.baseUrl });
-  }
-
-  // --------------------
-  // Core helpers
-  // --------------------
-
-  private getAuthToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('access_token');
-  }
-
-  private async request<T>(
-    endpoint: string,
-    options: RequestOptions = {}
-  ): Promise<T> {
-    const { requiresAuth = false, ...fetchOptions } = options;
-
-    const normalizedEndpoint = endpoint.startsWith('/')
-      ? endpoint
-      : `/${endpoint}`;
-    const url = `${this.baseUrl}${normalizedEndpoint}`;
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (fetchOptions.headers) {
-      Object.assign(headers, fetchOptions.headers as Record<string, string>);
+  useEffect(() => {
+    if (!cloneId) {
+      logger.error('CloneMemoriesPage: missing cloneId');
+      setLoading(false);
+      return;
     }
 
-    if (requiresAuth) {
-      const token = this.getAuthToken();
-      if (!token) {
-        throw new Error('Authentication required');
-      }
-      headers.Authorization = `Bearer ${token}`;
-    }
+    void loadData();
+  }, [cloneId]);
+
+  const loadData = async () => {
+    if (!cloneId) return;
 
     try {
-      const response = await fetch(url, {
-        ...fetchOptions,
-        headers,
+      logger.info('Loading clone memories', { cloneId });
+
+      const cloneData = await apiClient.getCloneById(cloneId);
+      const memoriesData = await apiClient.getCloneMemories(cloneId);
+
+      setClone(cloneData);
+      setMemories(Array.isArray(memoriesData) ? memoriesData : []);
+    } catch (error: any) {
+      logger.error('Failed to load clone memories', {
+        cloneId,
+        error: error?.message ?? 'Unknown error',
       });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage =
-            errorData?.detail ||
-            errorData?.message ||
-            errorMessage;
-        } catch {
-          errorMessage = response.statusText || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      if (response.status === 204) {
-        return undefined as unknown as T;
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const txt = await response.text();
-        return txt as unknown as T;
-      }
-
-      return (await response.json()) as T;
-    } catch (error) {
-      logger.error('API request error', { error });
-      throw error;
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  private get<T>(endpoint: string, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET', requiresAuth });
-  }
-
-  private post<T>(
-    endpoint: string,
-    data: unknown,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(data ?? {}),
-      requiresAuth,
-    });
-  }
-
-  private patch<T>(
-    endpoint: string,
-    data: unknown,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PATCH',
-      body: JSON.stringify(data ?? {}),
-      requiresAuth,
-    });
-  }
-
-  private delete<T>(
-    endpoint: string,
-    requiresAuth = false
-  ): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'DELETE',
-      requiresAuth,
-    });
-  }
-
-  // --------------------
-  // Account / RGPD
-  // --------------------
-
-  updateConsent(consents: Partial<User>): Promise<User> {
-    return this.patch<User>(
-      `${API_PREFIX}/auth/me/consent`,
-      consents,
-      true
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 text-rose-400 animate-spin" />
+        </div>
+      </AppLayout>
     );
   }
 
-  exportUserData(): Promise<{ exported_at: string; data: unknown }> {
-    return this.get(
-      `${API_PREFIX}/auth/me/export`,
-      true
+  if (!clone) {
+    return (
+      <AppLayout>
+        <div className="text-center py-12">
+          <p className="text-gray-600">Clone introuvable</p>
+          <Link
+            href="/clones"
+            className="mt-4 inline-block text-rose-500 underline"
+          >
+            Back to clones
+          </Link>
+        </div>
+      </AppLayout>
     );
   }
 
-  deleteUserData(): Promise<{ status: 'ok' }> {
-    return this.delete(
-      `${API_PREFIX}/auth/me/data`,
-      true
-    );
-  }
+  return (
+    <AppLayout>
+      <div className="max-w-5xl mx-auto">
+        <Link
+          href={`/clones/${cloneId}`}
+          className="inline-flex items-center space-x-2 text-gray-600 hover:text-rose-500 mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Clone</span>
+        </Link>
 
-  // --------------------
-  // Billing
-  // --------------------
+        <h1 className="text-2xl font-display mb-6">
+          Memories of {clone.name}
+        </h1>
 
-  getBillingPlan(): Promise<BillingQuota> {
-    return this.get(
-      `${API_PREFIX}/billing/plan`,
-      true
-    );
-  }
-
-  getBillingUsage(): Promise<UsageStats> {
-    return this.get(
-      `${API_PREFIX}/billing/usage`,
-      true
-    );
-  }
-
-  createCheckout(plan: string): Promise<{ checkout_url: string }> {
-    return this.post(
-      `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
-      {},
-      true
-    );
-  }
-
-  // --------------------
-  // Clones / Chat (API MÉTIER)
-  // --------------------
-
-  getCloneById(cloneId: string): Promise<Clone> {
-    return this.get(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}`,
-      true
-    );
-  }
-
-  getCloneConversations(cloneId: string): Promise<Conversation[]> {
-    return this.get(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}/conversations`,
-      true
-    );
-  }
-
-  createConversation(
-    cloneId: string,
-    title: string
-  ): Promise<Conversation> {
-    return this.post(
-      `${API_PREFIX}/clones/${encodeURIComponent(cloneId)}/conversations`,
-      { title },
-      true
-    );
-  }
-
-  getConversationMessages(
-    conversationId: string
-  ): Promise<Message[]> {
-    return this.get(
-      `${API_PREFIX}/conversations/${encodeURIComponent(conversationId)}/messages`,
-      true
-    );
-  }
-
-  sendMessage(
-    cloneId: string,
-    conversationId: string,
-    content: string
-  ): Promise<ChatResponse> {
-    return this.post(
-      `${API_PREFIX}/clones/${encodeURIComponent(
-        cloneId
-      )}/conversations/${encodeURIComponent(
-        conversationId
-      )}/messages`,
-      { content },
-      true
-    );
-  }
-
-  // --------------------
-  // Audio / Avatar
-  // --------------------
-
-  generateTTS(
-    cloneId: string,
-    text: string,
-    voiceId?: string
-  ): Promise<TTSResponse> {
-    return this.post(
-      `${API_PREFIX}/audio/tts/${encodeURIComponent(cloneId)}`,
-      { text, voice_id: voiceId },
-      true
-    );
-  }
-
-  generateAvatar(
-    cloneId: string,
-    text: string,
-    voice?: string,
-    style?: string
-  ): Promise<{ avatar_image_url: string; message: string }> {
-    return this.post(
-      `${API_PREFIX}/avatar/generate/${encodeURIComponent(cloneId)}`,
-      { text, voice, style },
-      true
-    );
-  }
+        {memories.length === 0 ? (
+          <p className="text-gray-500">No memories available.</p>
+        ) : (
+          <div className="space-y-4">
+            {memories.map((m) => (
+              <div
+                key={m.id}
+                className="p-4 rounded-md border border-gray-200 bg-white"
+              >
+                <div className="text-sm text-gray-500 mb-1">
+                  {new Date(m.created_at).toLocaleString()}
+                </div>
+                <div className="text-gray-900">{m.content}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </AppLayout>
+  );
 }
-
-export const apiClient = new APIClient(API_BASE_URL);
-export default apiClient;
