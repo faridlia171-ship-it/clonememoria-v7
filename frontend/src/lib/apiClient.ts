@@ -166,15 +166,24 @@ class APIClient {
   }
 
   // =========================
-  // 🔹 ACCOUNT / CONSENT (STUB TEMPORAIRE)
+  // 🔹 ACCOUNT (STUBS TEMPORAIRES — PHASE 1)
   // =========================
+
   /**
-   * TEMPORAIRE — permet de passer le build sans modifier le backend.
-   * La logique réelle sera branchée une fois le contrat API validé.
+   * TEMPORAIRE — sauvegarde des consentements non câblée backend.
    */
   updateConsent(_consents: unknown): Promise<void> {
-    logger.warn('updateConsent called (stubbed, no backend call)');
+    logger.warn('updateConsent called (stubbed)');
     return Promise.resolve();
+  }
+
+  /**
+   * TEMPORAIRE — export des données utilisateur non câblé backend.
+   * Retourne un objet vide pour permettre à l’UI de fonctionner.
+   */
+  exportUserData(): Promise<Record<string, unknown>> {
+    logger.warn('exportUserData called (stubbed)');
+    return Promise.resolve({});
   }
 }
 
