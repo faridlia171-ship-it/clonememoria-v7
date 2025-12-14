@@ -1,314 +1,177 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
-import { useRouter } from 'next/navigation';
+import type { User, TTSResponse } from '@/types';
 
-interface PlanDetails {
-  name: string;
-  price: number;
-  messages_limit: number;
-  clones_limit: number;
-  documents_limit: number;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX || '/api';
+
+interface RequestOptions extends RequestInit {
+  requiresAuth?: boolean;
 }
 
-interface BillingPlan {
-  current_plan: string;
-  plan_details: PlanDetails;
-  period_start: string | null;
-  period_end: string | null;
-  is_dummy_mode: boolean;
-}
+class APIClient {
+  private baseUrl: string;
 
-interface UsageStats {
-  current_period: {
-    clones: number;
-    documents: number;
-    messages: number;
-  };
-  today: {
-    messages_count: number;
-    tokens_used: number;
-    tts_requests: number;
-    avatar_requests: number;
-  };
-  timestamp: string;
-}
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+    logger.info('APIClient initialized', { baseUrl: this.baseUrl });
+  }
 
-export default function BillingPage() {
-  const { user } = useAuth();
-  const router = useRouter();
+  private getAuthToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('access_token');
+  }
 
-  const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState(false);
-  const [plan, setPlan] = useState<BillingPlan | null>(null);
-  const [usage, setUsage] = useState<UsageStats | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const { requiresAuth = false, ...fetchOptions } = options;
 
-  useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = `${this.baseUrl}${normalizedEndpoint}`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (fetchOptions.headers) {
+      Object.assign(headers, fetchOptions.headers as Record<string, string>);
     }
-    void fetchBillingData();
-  }, [user, router]);
 
-  const fetchBillingData = async () => {
-    setLoading(true);
+    if (requiresAuth) {
+      const token = this.getAuthToken();
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+      headers.Authorization = `Bearer ${token}`;
+    }
 
     try {
-      const [planData, usageData] = await Promise.all([
-        apiClient.getBillingPlan(),
-        apiClient.getBillingUsage(),
-      ]);
+      const response = await fetch(url, {
+        ...fetchOptions,
+        headers,
+      });
 
-      if (!planData || !usageData) {
-        throw new Error('Invalid billing response');
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData?.detail || errorData?.message || errorMessage;
+        } catch {
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
-      setPlan(planData);
-      setUsage(usageData);
+      if (response.status === 204) {
+        return undefined as unknown as T;
+      }
 
-      logger.info('Billing data fetched', {
-        plan: planData?.current_plan ?? 'unknown',
-      });
-    } catch (err) {
-      logger.error('Failed to fetch billing data', { error: err });
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const txt = await response.text();
+        return txt as unknown as T;
+      }
 
-      setMessage({
-        type: 'error',
-        text:
-          err instanceof Error
-            ? err.message
-            : 'Unable to load billing information',
-      });
-    } finally {
-      setLoading(false);
+      return (await response.json()) as T;
+    } catch (error) {
+      logger.error('API request error', { error });
+      throw error;
     }
-  };
+  }
 
-  const handleUpgrade = async (targetPlan: string) => {
-    setUpgrading(true);
-    setMessage(null);
+  private get<T>(endpoint: string, requiresAuth = false): Promise<T> {
+    return this.request<T>(endpoint, { method: 'GET', requiresAuth });
+  }
 
-    try {
-      const result = await apiClient.createCheckout(targetPlan);
+  private post<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+      requiresAuth,
+    });
+  }
 
-      logger.info('Checkout initiated', {
-        plan: targetPlan,
-        ok: Boolean(result),
-      });
+  private patch<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify(data ?? {}),
+      requiresAuth,
+    });
+  }
 
-      const text =
-        result?.message ??
-        (result?.checkout_url ? 'Redirecting to checkout...' : 'Upgrade complete');
+  private delete<T>(endpoint: string, requiresAuth = false): Promise<T> {
+    return this.request<T>(endpoint, { method: 'DELETE', requiresAuth });
+  }
 
-      setMessage({
-        type: 'success',
-        text,
-      });
-    } catch (err) {
-      logger.error('Upgrade failed', { error: err });
+  // --------------------
+  // Account / RGPD
+  // --------------------
 
-      setMessage({
-        type: 'error',
-        text:
-          err instanceof Error
-            ? err.message
-            : 'Failed to upgrade plan',
-      });
-    } finally {
-      setUpgrading(false);
-    }
-  };
+  updateConsent(consents: Partial<User>): Promise<User> {
+    return this.patch<User>(`${API_PREFIX}/auth/me/consent`, consents, true);
+  }
 
-  const calculateUsagePercentage = (used: number, limit: number) => {
-    if (limit === -1) return 0;
-    if (limit === 0) return 0;
-    return Math.min((used / limit) * 100, 100);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading billing information...</div>
-      </div>
+  exportUserData(): Promise<{ exported_at: string; data: unknown }> {
+    return this.get<{ exported_at: string; data: unknown }>(
+      `${API_PREFIX}/auth/me/export`,
+      true
     );
   }
 
-  if (!plan || !usage) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-red-600">Failed to load billing data</div>
-      </div>
+  deleteUserData(): Promise<{ status: 'ok' }> {
+    return this.delete<{ status: 'ok' }>(
+      `${API_PREFIX}/auth/me/data`,
+      true
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Billing & Usage</h1>
+  // --------------------
+  // Billing (TEMPORAIREMENT NON TYPÉ – UI DRIVEN)
+  // --------------------
 
-        {message && (
-          <div
-            className={`mb-6 p-4 rounded-lg ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-800 border border-green-200'
-                : 'bg-red-50 text-red-800 border border-red-200'
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
+  getBillingPlan(): Promise<any> {
+    return this.get<any>(`${API_PREFIX}/billing/plan`, true);
+  }
 
-        {plan.is_dummy_mode && (
-          <div className="mb-6 p-4 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg">
-            <strong>Demo Mode:</strong> This billing page is in dummy mode. No real payment is processed.
-          </div>
-        )}
+  getBillingUsage(): Promise<any> {
+    return this.get<any>(`${API_PREFIX}/billing/usage`, true);
+  }
 
-        {/* CURRENT PLAN */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Current Plan</h2>
+  createCheckout(plan: string): Promise<any> {
+    return this.post<any>(
+      `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
+      {},
+      true
+    );
+  }
 
-            <div className="mb-4">
-              <div className="text-3xl font-bold text-blue-600 mb-1">
-                {plan.plan_details?.name ?? 'Unknown'}
-              </div>
-              <div className="text-2xl text-gray-900">
-                ${plan.plan_details?.price ?? 0}
-                <span className="text-sm text-gray-600">/month</span>
-              </div>
-            </div>
+  // --------------------
+  // Audio / Avatar
+  // --------------------
 
-            <div className="space-y-2 text-sm text-gray-600">
-              <div>
-                <strong>Messages:</strong>{' '}
-                {plan.plan_details.messages_limit === -1
-                  ? 'Unlimited'
-                  : `${plan.plan_details.messages_limit} /month`}
-              </div>
-              <div>
-                <strong>Clones:</strong>{' '}
-                {plan.plan_details.clones_limit === -1
-                  ? 'Unlimited'
-                  : plan.plan_details.clones_limit}
-              </div>
-              <div>
-                <strong>Documents:</strong>{' '}
-                {plan.plan_details.documents_limit === -1
-                  ? 'Unlimited'
-                  : plan.plan_details.documents_limit}
-              </div>
-            </div>
+  generateTTS(
+    cloneId: string,
+    text: string,
+    voiceId?: string
+  ): Promise<TTSResponse> {
+    return this.post<TTSResponse>(
+      `${API_PREFIX}/audio/tts/${encodeURIComponent(cloneId)}`,
+      { text, voice_id: voiceId },
+      true
+    );
+  }
 
-            {plan.current_plan === 'free' && (
-              <button
-                onClick={() => handleUpgrade('pro')}
-                disabled={upgrading}
-                className="mt-6 w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {upgrading ? 'Processing...' : 'Upgrade to Pro'}
-              </button>
-            )}
-          </div>
-
-          {/* USAGE */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Usage This Period</h2>
-
-            <div className="space-y-4">
-              {/* Clones */}
-              <UsageBar
-                label="Clones"
-                used={usage.current_period.clones}
-                limit={plan.plan_details.clones_limit}
-                percentage={calculateUsagePercentage(
-                  usage.current_period.clones,
-                  plan.plan_details.clones_limit
-                )}
-                color="bg-blue-600"
-              />
-
-              {/* Messages */}
-              <UsageBar
-                label="Messages"
-                used={usage.current_period.messages}
-                limit={plan.plan_details.messages_limit}
-                percentage={calculateUsagePercentage(
-                  usage.current_period.messages,
-                  plan.plan_details.messages_limit
-                )}
-                color="bg-green-600"
-              />
-
-              {/* Documents */}
-              <UsageBar
-                label="Documents"
-                used={usage.current_period.documents}
-                limit={plan.plan_details.documents_limit}
-                percentage={calculateUsagePercentage(
-                  usage.current_period.documents,
-                  plan.plan_details.documents_limit
-                )}
-                color="bg-purple-600"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* PLANS */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Available Plans</h2>
-
-          {/* … section des plans identique, non modifiée pour éviter de casser le front … */}
-        </div>
-
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="text-blue-600 hover:text-blue-700"
-          >
-            ← Back to Dashboard
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  generateAvatar(
+    cloneId: string,
+    text: string,
+    voice?: string,
+    style?: string
+  ): Promise<{ avatar_image_url: string; message: string }> {
+    return this.post<{ avatar_image_url: string; message: string }>(
+      `${API_PREFIX}/avatar/generate/${encodeURIComponent(cloneId)}`,
+      { text, voice, style },
+      true
+    );
+  }
 }
 
-/* Small protected component */
-function UsageBar({
-  label,
-  used,
-  limit,
-  percentage,
-  color,
-}: {
-  label: string;
-  used: number;
-  limit: number;
-  percentage: number;
-  color: string;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-gray-600">{label}</span>
-        <span className="font-medium text-gray-900">
-          {used} / {limit === -1 ? '∞' : limit}
-        </span>
-      </div>
-      <div className="w-full bg-gray-200 rounded-full h-2">
-        <div
-          className={`${color} h-2 rounded-full transition-all`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
+export const apiClient = new APIClient(API_BASE_URL);
+export default apiClient;
