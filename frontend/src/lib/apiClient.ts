@@ -91,10 +91,7 @@ class APIClient {
 
   clones = {
     list: async (): Promise<CloneWithStats[]> => {
-      logger.info('apiClient.clones.list called');
-
       const clones = await this.listClones();
-
       return clones.map((clone) => ({
         ...clone,
         memory_count: 0,
@@ -104,7 +101,7 @@ class APIClient {
   };
 
   /* =======================
-     CONVERSATIONS / MESSAGES
+     CONVERSATIONS / CHAT
   ======================= */
 
   getCloneConversations(cloneId: string): Promise<Conversation[]> {
@@ -138,7 +135,7 @@ class APIClient {
   }
 
   /* =======================
-     BILLING / AUDIO
+     BILLING  ✅ FIX ICI
   ======================= */
 
   getBillingPlan(): Promise<BillingQuota> {
@@ -148,6 +145,19 @@ class APIClient {
   getBillingUsage(): Promise<UsageStats> {
     return this.get<UsageStats>(`${API_PREFIX}/billing/usage`, true);
   }
+
+  createCheckout(plan: string): Promise<{ checkout_url: string }> {
+    logger.info('createCheckout called', { plan });
+    return this.post<{ checkout_url: string }>(
+      `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
+      {},
+      true
+    );
+  }
+
+  /* =======================
+     AUDIO
+  ======================= */
 
   generateTTS(
     cloneId: string,
@@ -162,11 +172,10 @@ class APIClient {
   }
 
   /* =======================
-     ACCOUNT (STUBS ALIGNÉS)
+     ACCOUNT (STUBS)
   ======================= */
 
   updateConsent(_consents: unknown): Promise<void> {
-    logger.info('updateConsent called (stub)', _consents);
     return Promise.resolve();
   }
 
