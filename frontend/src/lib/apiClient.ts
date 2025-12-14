@@ -127,7 +127,7 @@ class APIClient {
   }
 
   /* =======================
-     CLONES (NAMESPACED API — COMPAT FRONT)
+     CLONES (NAMESPACED — COMPAT FRONT)
   ======================= */
 
   clones = {
@@ -174,10 +174,11 @@ class APIClient {
   }
 
   /* =======================
-     ACCOUNT (STUBS)
+     ACCOUNT (STUBS — ALIGNÉS FRONT)
   ======================= */
 
-  updateConsent(): Promise<void> {
+  updateConsent(_consents: unknown): Promise<void> {
+    logger.warn('updateConsent called (stub)', _consents);
     return Promise.resolve();
   }
 
