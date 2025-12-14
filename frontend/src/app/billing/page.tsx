@@ -64,7 +64,6 @@ export default function BillingPage() {
         apiClient.getBillingUsage(),
       ]);
 
-      // Cast volontaire et assumé (backend non aligné pour l’instant)
       const typedPlan = planData as unknown as BillingPlan;
       const typedUsage = usageData as unknown as UsageStats;
 
@@ -78,9 +77,10 @@ export default function BillingPage() {
       logger.error('Failed to fetch billing data', { error: err });
       setMessage({
         type: 'error',
-        text: err instanceof Error
-          ? err.message
-          : 'Unable to load billing information',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Unable to load billing information',
       });
     } finally {
       setLoading(false);
@@ -92,9 +92,17 @@ export default function BillingPage() {
     setMessage(null);
     try {
       const result = await apiClient.createCheckout(targetPlan);
+
+      // Cas standard : redirection checkout
+      if (result?.checkout_url) {
+        window.location.href = result.checkout_url;
+        return;
+      }
+
+      // Fallback (ne devrait pas arriver)
       setMessage({
         type: 'success',
-        text: result?.message ?? 'Redirecting to checkout…',
+        text: 'Upgrade initiated',
       });
     } catch (err) {
       setMessage({
