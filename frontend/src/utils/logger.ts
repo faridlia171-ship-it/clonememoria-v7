@@ -23,18 +23,20 @@ const sanitize = (data: any): any => {
 };
 
 // Mode production = logs minimalistes
-const isProd = typeof window !== "undefined" && process.env.NODE_ENV === "production";
+const isProd =
+    typeof window !== "undefined" &&
+    process.env.NODE_ENV === "production";
 
 function baseLog(level: LogLevel, message: string, meta?: any) {
     const safeMeta = sanitize(meta);
 
     if (isProd) {
-        // En production : log minimal et non verbeux
+        // En production : log minimal
         console[level](`[${level.toUpperCase()}] ${message}`);
         return;
     }
 
-    // En développement : log complet et coloré
+    // En développement : log complet
     const timestamp = new Date().toISOString();
     const colors: Record<LogLevel, string> = {
         debug: "color: #7f8c8d",
@@ -50,9 +52,12 @@ function baseLog(level: LogLevel, message: string, meta?: any) {
     );
 }
 
-export const logger = {
+const logger = {
     debug: (msg: string, meta?: any) => baseLog("debug", msg, meta),
     info: (msg: string, meta?: any) => baseLog("info", msg, meta),
     warn: (msg: string, meta?: any) => baseLog("warn", msg, meta),
     error: (msg: string, meta?: any) => baseLog("error", msg, meta),
 };
+
+export default logger;
+export { logger };
