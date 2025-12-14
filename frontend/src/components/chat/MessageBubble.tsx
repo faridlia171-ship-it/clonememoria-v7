@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Message } from '@/types';
 import { User, Bot, Volume2, Loader2 } from 'lucide-react';
-import { apiClient } from '@/lib/apiClient';
+import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
 
 interface MessageBubbleProps {
@@ -144,3 +144,4 @@ export function MessageBubble({ message, cloneName, cloneId }: MessageBubbleProp
     </div>
   );
 }
+

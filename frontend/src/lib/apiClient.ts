@@ -1,29 +1,18 @@
 ﻿import logger from "./logger";
 
-export default class APIClient {
+class APIClient {
   private baseUrl: string;
-  private token: string | null = null;
 
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
+  constructor() {
+    this.baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5001";
   }
 
-  setToken(token: string | null) {
-    this.token = token;
-  }
-
-  // -----------------------------------------------------
-  // REQUEST GENERIQUE
-  // -----------------------------------------------------
   async request(path: string, method = "GET", body?: any) {
     const url = `${this.baseUrl}${path}`;
 
     const headers: any = {
       "Content-Type": "application/json",
     };
-    if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`;
-    }
 
     const options: any = { method, headers };
     if (body) options.body = JSON.stringify(body);
@@ -32,10 +21,9 @@ export default class APIClient {
 
     if (!res.ok) {
       logger.error("API Error", { path, status: res.status });
-      throw new Error(`API Error: ${res.status}`);
+      throw new Error(`API request failed: ${res.status}`);
     }
 
-    // Try JSON, fallback text
     try {
       return await res.json();
     } catch {
@@ -43,30 +31,29 @@ export default class APIClient {
     }
   }
 
-  get(path: string) {
-    return this.request(path, "GET");
+  // ----------------------
+  // Auth
+  // ----------------------
+  async login(data: any) {
+    return this.request("/auth/login", "POST", data);
   }
 
-  post(path: string, body: any) {
-    return this.request(path, "POST", body);
+  async register(data: any) {
+    return this.request("/auth/register", "POST", data);
   }
 
-  patch(path: string, body: any) {
-    return this.request(path, "PATCH", body);
-  }
-
-  delete(path: string) {
-    return this.request(path, "DELETE");
-  }
-
-  // -----------------------------------------------------
-  // METHODES UTILISATEUR
-  // -----------------------------------------------------
-  async updateConsent(consents: any) {
-    return this.patch("/users/consent", consents);
+  async getProfile() {
+    return this.request("/users/me");
   }
 
   async exportUserData() {
-    return this.get("/users/export");
+    return this.request("/users/export");
+  }
+
+  async updateConsent(consents: any) {
+    return this.request("/users/consent", "PATCH", consents);
   }
 }
+
+const apiClient = new APIClient();
+export default apiClient;

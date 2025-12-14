@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiClient } from '@/lib/apiClient';
+import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
 import { useRouter } from 'next/navigation';
 
@@ -311,3 +311,4 @@ function UsageBar({
     </div>
   );
 }
+

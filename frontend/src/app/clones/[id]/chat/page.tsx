@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatWindow } from '@/components/chat/ChatWindow';
-import { apiClient } from '@/lib/apiClient';
+import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
 import { Clone, Conversation, Message, ChatResponse } from '@/types';
 import { ArrowLeft, Loader2 } from 'lucide-react';

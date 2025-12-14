@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { CloneCard } from '@/components/clone/CloneCard';
 import { CloneForm } from '@/components/forms/CloneForm';
-import { apiClient } from '@/lib/apiClient';
+import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
 import { CloneWithStats, ToneConfig } from '@/types';
 import { Plus, Loader2 } from 'lucide-react';
@@ -86,3 +86,4 @@ export default function DashboardPage() {
     </AppLayout>
   );
 }
+
