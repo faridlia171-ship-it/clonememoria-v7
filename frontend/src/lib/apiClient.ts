@@ -2,13 +2,6 @@
 import type { UsageStats, BillingQuota, User, TTSResponse } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-/**
- * Backend réel (FastAPI) utilise settings.API_V1_PREFIX = "/api" par défaut.
- * Donc les endpoints doivent être préfixés par "/api" (et non "/api/v1").
- *
- * Optionnel: NEXT_PUBLIC_API_PREFIX si tu veux override (ex: "/api").
- */
 const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX || '/api';
 
 interface RequestOptions extends RequestInit {
@@ -46,25 +39,16 @@ class APIClient {
     if (requiresAuth) {
       const token = this.getAuthToken();
       if (!token) {
-        logger.error('API request requires auth but no token found', { endpoint: normalizedEndpoint });
         throw new Error('Authentication required');
       }
       headers.Authorization = `Bearer ${token}`;
     }
-
-    logger.debug('API request started', {
-      method: fetchOptions.method || 'GET',
-      url,
-      requiresAuth,
-    });
 
     try {
       const response = await fetch(url, {
         ...fetchOptions,
         headers,
       });
-
-      const elapsedTime = Date.now() - startTime;
 
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`;
@@ -74,19 +58,9 @@ class APIClient {
         } catch {
           errorMessage = response.statusText || errorMessage;
         }
-
-        logger.error('API request failed', {
-          url,
-          status: response.status,
-          statusText: response.statusText,
-          errorMessage,
-          elapsedTime,
-        });
-
         throw new Error(errorMessage);
       }
 
-      // 204 / empty body safety
       if (response.status === 204) {
         return undefined as unknown as T;
       }
@@ -97,33 +71,18 @@ class APIClient {
         return txt as unknown as T;
       }
 
-      const data = (await response.json()) as T;
-
-      logger.info('API request completed', {
-        url,
-        status: response.status,
-        elapsedTime: `${elapsedTime}ms`,
-      });
-
-      return data;
+      return (await response.json()) as T;
     } catch (error) {
-      const elapsedTime = Date.now() - startTime;
-
-      logger.error('API request error', {
-        url,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        elapsedTime,
-      });
-
+      logger.error('API request error', { error });
       throw error;
     }
   }
 
-  async get<T>(endpoint: string, requiresAuth = false): Promise<T> {
+  private get<T>(endpoint: string, requiresAuth = false): Promise<T> {
     return this.request<T>(endpoint, { method: 'GET', requiresAuth });
   }
 
-  async post<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
+  private post<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(data ?? {}),
@@ -131,15 +90,7 @@ class APIClient {
     });
   }
 
-  async put<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PUT',
-      body: JSON.stringify(data ?? {}),
-      requiresAuth,
-    });
-  }
-
-  async patch<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
+  private patch<T>(endpoint: string, data: unknown, requiresAuth = false): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PATCH',
       body: JSON.stringify(data ?? {}),
@@ -147,48 +98,61 @@ class APIClient {
     });
   }
 
-  async delete<T>(endpoint: string, requiresAuth = false): Promise<T> {
+  private delete<T>(endpoint: string, requiresAuth = false): Promise<T> {
     return this.request<T>(endpoint, { method: 'DELETE', requiresAuth });
   }
 
-  // ---------------------------
-  // RGPD / Account (utilisé par app/account/page.tsx)
-  // ---------------------------
+  // --------------------
+  // Account / RGPD
+  // --------------------
 
-  async updateConsent(consents: Partial<User>): Promise<User> {
+  updateConsent(consents: Partial<User>): Promise<User> {
     return this.patch<User>(`${API_PREFIX}/auth/me/consent`, consents, true);
   }
 
-  async exportUserData(): Promise<{ exported_at: string; data: unknown }> {
-    return this.get<{ exported_at: string; data: unknown }>(`${API_PREFIX}/auth/me/export`, true);
+  exportUserData(): Promise<{ exported_at: string; data: unknown }> {
+    return this.get<{ exported_at: string; data: unknown }>(
+      `${API_PREFIX}/auth/me/export`,
+      true
+    );
   }
 
-  async deleteUserData(): Promise<{ status: 'ok' }> {
-    return this.delete<{ status: 'ok' }>(`${API_PREFIX}/auth/me/data`, true);
+  deleteUserData(): Promise<{ status: 'ok' }> {
+    return this.delete<{ status: 'ok' }>(
+      `${API_PREFIX}/auth/me/data`,
+      true
+    );
   }
 
-  // ---------------------------
-  // Billing (utilisé par app/billing/page.tsx)
-  // ---------------------------
+  // --------------------
+  // Billing
+  // --------------------
 
-  async getBillingPlan(): Promise<BillingQuota> {
+  getBillingPlan(): Promise<BillingQuota> {
     return this.get<BillingQuota>(`${API_PREFIX}/billing/plan`, true);
   }
 
-  async getBillingUsage(): Promise<UsageStats> {
+  getBillingUsage(): Promise<UsageStats> {
     return this.get<UsageStats>(`${API_PREFIX}/billing/usage`, true);
   }
 
-  async createCheckout(plan: string): Promise<{ checkout_url: string }> {
-    const qp = encodeURIComponent(plan);
-    return this.post<{ checkout_url: string }>(`${API_PREFIX}/billing/checkout?plan=${qp}`, {}, true);
+  createCheckout(plan: string): Promise<{ checkout_url: string }> {
+    return this.post<{ checkout_url: string }>(
+      `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
+      {},
+      true
+    );
   }
 
-  // ---------------------------
-  // Audio / Avatar (utilisé par MessageBubble)
-  // ---------------------------
+  // --------------------
+  // Audio / Avatar
+  // --------------------
 
-  async generateTTS(cloneId: string, text: string, voiceId?: string): Promise<TTSResponse> {
+  generateTTS(
+    cloneId: string,
+    text: string,
+    voiceId?: string
+  ): Promise<TTSResponse> {
     return this.post<TTSResponse>(
       `${API_PREFIX}/audio/tts/${encodeURIComponent(cloneId)}`,
       { text, voice_id: voiceId },
@@ -196,7 +160,7 @@ class APIClient {
     );
   }
 
-  async generateAvatar(
+  generateAvatar(
     cloneId: string,
     text: string,
     voice?: string,
@@ -211,3 +175,4 @@ class APIClient {
 }
 
 export const apiClient = new APIClient(API_BASE_URL);
+export default apiClient;
