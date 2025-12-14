@@ -19,9 +19,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  /**
-   * Sécurisation : si cloneId absent → log + fallback UI.
-   */
   useEffect(() => {
     if (!cloneId) {
       logger.error('ChatPage: missing cloneId in route params');
@@ -30,59 +27,38 @@ export default function ChatPage() {
     }
 
     logger.info('ChatPage mounted', { cloneId });
-    initializeChat();
+    void initializeChat();
   }, [cloneId]);
 
-  /**
-   * Initialisation conversation + messages — robuste + entièrement sécurisée.
-   */
   const initializeChat = async () => {
     if (!cloneId) return;
 
     try {
       logger.info('ChatPage initialization started', { cloneId });
 
-      // 1. Charger clone
-      const cloneData = await apiClient.get<Clone>(
-        `/api/clones/${cloneId}`,
-        true
-      );
+      // 1️⃣ Clone
+      const cloneData = await apiClient.getCloneById(cloneId);
       setClone(cloneData);
 
-      // 2. Charger conversations existantes
-      const conversations = await apiClient.get<Conversation[]>(
-        `/api/clones/${cloneId}/conversations`,
-        true
-      );
+      // 2️⃣ Conversations
+      const conversations = await apiClient.getCloneConversations(cloneId);
 
       let activeConv: Conversation;
 
-      if (conversations && conversations.length > 0) {
+      if (conversations.length > 0) {
         activeConv = conversations[0];
-        logger.info('Using existing conversation', {
-          conversationId: activeConv.id,
-        });
       } else {
-        activeConv = await apiClient.post<Conversation>(
-          `/api/clones/${cloneId}/conversations`,
-          { title: `Chat with ${cloneData.name}` },
-          true
+        activeConv = await apiClient.createConversation(
+          cloneId,
+          `Chat with ${cloneData.name}`
         );
-
-        logger.info('Created new conversation', {
-          conversationId: activeConv.id,
-        });
       }
 
       setConversation(activeConv);
 
-      // 3. Charger messages
-      const msgs = await apiClient.get<Message[]>(
-        `/api/clones/${cloneId}/conversations/${activeConv.id}/messages`,
-        true
-      );
-
-      setMessages(Array.isArray(msgs) ? msgs : []);
+      // 3️⃣ Messages
+      const msgs = await apiClient.getConversationMessages(activeConv.id);
+      setMessages(msgs);
 
       logger.info('Chat initialized successfully', {
         cloneId,
@@ -99,29 +75,21 @@ export default function ChatPage() {
     }
   };
 
-  /**
-   * Envoi de message — sécurisé + typé
-   */
   const handleSendMessage = useCallback(
     async (content: string): Promise<ChatResponse> => {
       if (!conversation) {
         throw new Error('No active conversation');
       }
 
-      const response = await apiClient.post<ChatResponse>(
-        `/api/clones/${cloneId}/conversations/${conversation.id}/messages`,
-        { content },
-        true
+      return apiClient.sendMessage(
+        cloneId!,
+        conversation.id,
+        content
       );
-
-      return response;
     },
     [cloneId, conversation]
   );
 
-  /**
-   * Loading state amélioré
-   */
   if (loading) {
     return (
       <AppLayout>
@@ -132,17 +100,13 @@ export default function ChatPage() {
     );
   }
 
-  /**
-   * Erreur : clone introuvable ou conversation non créée → UI propre
-   */
   if (!clone || !conversation) {
     return (
       <AppLayout>
         <div className="max-w-xl mx-auto text-center py-12">
           <h2 className="text-xl font-display mb-4">Chat unavailable</h2>
           <p className="text-gray-600 mb-6">
-            Impossible d'initialiser ce chat.  
-            Le clone ou la conversation n'a pas pu être chargé.
+            Impossible d'initialiser ce chat.
           </p>
 
           <Link
@@ -156,9 +120,6 @@ export default function ChatPage() {
     );
   }
 
-  /**
-   * Render normal
-   */
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto">
