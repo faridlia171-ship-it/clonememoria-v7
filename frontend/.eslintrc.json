@@ -1,6 +1,14 @@
 {
   "root": true,
-  "extends": ["next", "next/core-web-vitals"],
+  "extends": [
+    "next",
+    "next/core-web-vitals"
+  ],
+  "settings": {
+    "next": {
+      "rootDir": ["./"]
+    }
+  },
   "rules": {
     "react/no-unescaped-entities": "off",
     "no-unused-vars": "warn",
