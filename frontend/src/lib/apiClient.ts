@@ -10,7 +10,8 @@ class APIClient {
       "Content-Type": "application/json",
     };
 
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
     const res = await fetch(url, {
@@ -48,15 +49,19 @@ class APIClient {
     return this.request(path, "DELETE");
   }
 
-  updateConsent(userId: string, consent: Record<string, boolean>) {
-    return this.post(`/users/${userId}/consent`, consent);
+  // ---------- FIX ICI ----------
+  updateConsent(consents: Record<string, boolean>) {
+    return this.post(`/users/me/consent`, consents);
   }
+  // -------------------------------
 
   exportUserData(userId: string) {
     return this.get(`/users/${userId}/export`);
   }
 }
 
-const apiClient = new APIClient(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5600");
+const apiClient = new APIClient(
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5600"
+);
 
 export default apiClient;
