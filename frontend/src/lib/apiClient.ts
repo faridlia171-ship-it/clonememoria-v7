@@ -1,11 +1,7 @@
-﻿import logger from "./logger";
+﻿import logger from "@/utils/logger";
 
 class APIClient {
-  private baseUrl: string;
-
-  constructor() {
-    this.baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5001";
-  }
+  constructor(private baseUrl: string) {}
 
   async request(path: string, method = "GET", body?: any) {
     const url = `${this.baseUrl}${path}`;
@@ -14,14 +10,19 @@ class APIClient {
       "Content-Type": "application/json",
     };
 
-    const options: any = { method, headers };
-    if (body) options.body = JSON.stringify(body);
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const res = await fetch(url, options);
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
     if (!res.ok) {
-      logger.error("API Error", { path, status: res.status });
-      throw new Error(`API request failed: ${res.status}`);
+      const errorText = await res.text();
+      logger.error("API error:", errorText);
+      throw new Error(errorText);
     }
 
     try {
@@ -31,29 +32,31 @@ class APIClient {
     }
   }
 
-  // ----------------------
-  // Auth
-  // ----------------------
-  async login(data: any) {
-    return this.request("/auth/login", "POST", data);
+  get(path: string) {
+    return this.request(path, "GET");
   }
 
-  async register(data: any) {
-    return this.request("/auth/register", "POST", data);
+  post(path: string, body: any) {
+    return this.request(path, "POST", body);
   }
 
-  async getProfile() {
-    return this.request("/users/me");
+  put(path: string, body: any) {
+    return this.request(path, "PUT", body);
   }
 
-  async exportUserData() {
-    return this.request("/users/export");
+  delete(path: string) {
+    return this.request(path, "DELETE");
   }
 
-  async updateConsent(consents: any) {
-    return this.request("/users/consent", "PATCH", consents);
+  updateConsent(userId: string, consent: Record<string, boolean>) {
+    return this.post(`/users/${userId}/consent`, consent);
+  }
+
+  exportUserData(userId: string) {
+    return this.get(`/users/${userId}/export`);
   }
 }
 
-const apiClient = new APIClient();
+const apiClient = new APIClient(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5600");
+
 export default apiClient;
