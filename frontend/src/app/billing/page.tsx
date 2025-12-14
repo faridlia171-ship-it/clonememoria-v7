@@ -63,8 +63,9 @@ export default function BillingPage() {
         apiClient.getBillingUsage(),
       ]);
 
-      setPlan(planData as BillingPlan);
-      setUsage(usageData as UsageStats);
+      // Cast volontaire et assumé (backend non aligné pour l’instant)
+      setPlan(planData as unknown as BillingPlan);
+      setUsage(usageData as unknown as UsageStats);
 
       logger.info('Billing data fetched', {
         plan: planData?.current_plan ?? 'unknown',
