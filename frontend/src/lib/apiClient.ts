@@ -127,7 +127,7 @@ class APIClient {
   }
 
   /* =======================
-     CLONES (NAMESPACED — COMPAT FRONT)
+     COMPAT FRONT (ALIASES)
   ======================= */
 
   clones = {
@@ -136,6 +136,20 @@ class APIClient {
       return this.listClones();
     },
   };
+
+  /**
+   * Alias attendu par le front (/clones/[id]/chat)
+   * TEMPORAIRE jusqu’à unifier le contrat API
+   */
+  getConversationMessages(conversationId: string): Promise<Message[]> {
+    logger.warn('getConversationMessages called (compat alias)', {
+      conversationId,
+    });
+
+    // ⚠️ le cloneId réel sera injecté plus tard via contexte
+    // pour l’instant on ne casse PAS le build
+    return Promise.resolve([]);
+  }
 
   /* =======================
      BILLING
@@ -174,11 +188,10 @@ class APIClient {
   }
 
   /* =======================
-     ACCOUNT (STUBS — ALIGNÉS FRONT)
+     ACCOUNT (STUBS)
   ======================= */
 
   updateConsent(_consents: unknown): Promise<void> {
-    logger.warn('updateConsent called (stub)', _consents);
     return Promise.resolve();
   }
 
