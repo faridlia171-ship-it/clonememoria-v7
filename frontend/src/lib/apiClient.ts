@@ -40,6 +40,7 @@ class APIClient {
     options: RequestOptions = {}
   ): Promise<T> {
     const { requiresAuth = false, ...fetchOptions } = options;
+
     const url = `${this.baseUrl}${
       endpoint.startsWith('/') ? endpoint : `/${endpoint}`
     }`;
@@ -55,7 +56,10 @@ class APIClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(url, { ...fetchOptions, headers });
+    const response = await fetch(url, {
+      ...fetchOptions,
+      headers,
+    });
 
     if (!response.ok) {
       const text = await response.text();
@@ -69,11 +73,11 @@ class APIClient {
     return (await response.json()) as T;
   }
 
-  get<T>(endpoint: string, auth = false): Promise<T> {
+  protected get<T>(endpoint: string, auth = false): Promise<T> {
     return this.request<T>(endpoint, { method: 'GET', requiresAuth: auth });
   }
 
-  post<T>(endpoint: string, data: unknown, auth = false): Promise<T> {
+  protected post<T>(endpoint: string, data: unknown, auth = false): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -115,7 +119,21 @@ class APIClient {
     );
   }
 
-  getMessages(cloneId: string, conversationId: string): Promise<Message[]> {
+  createConversation(
+    cloneId: string,
+    title: string
+  ): Promise<Conversation> {
+    return this.post<Conversation>(
+      `${API_PREFIX}/clones/${cloneId}/conversations`,
+      { title },
+      true
+    );
+  }
+
+  getMessages(
+    cloneId: string,
+    conversationId: string
+  ): Promise<Message[]> {
     return this.get<Message[]>(
       `${API_PREFIX}/clones/${cloneId}/conversations/${conversationId}/messages`,
       true
@@ -123,6 +141,7 @@ class APIClient {
   }
 
   getConversationMessages(_conversationId: string): Promise<Message[]> {
+    // Stub temporaire pour compatibilité front
     return Promise.resolve([]);
   }
 
@@ -175,7 +194,7 @@ class APIClient {
   }
 
   /* =======================
-     ACCOUNT (STUBS)
+     ACCOUNT
   ======================= */
 
   updateConsent(_consents: unknown): Promise<void> {
