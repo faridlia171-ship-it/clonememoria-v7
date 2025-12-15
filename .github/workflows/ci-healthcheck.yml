@@ -1,0 +1,65 @@
+﻿name: CloneMemoria - Full CI Healthcheck
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check duplicate files
+        run: |
+          duplicates=$(find . -type f -printf "%f\n" | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "Duplicate files detected"
+            echo "$duplicates"
+            exit 1
+          fi
+
+      - name: Check directories
+        run: |
+          test -d backend
+          test -d frontend
+          test -d backend/api/routes
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Import backend
+        run: python - <<EOF
+          import backend.main
+          print("Backend OK")
+          EOF
+
+      - name: Check routes
+        run: python - <<EOF
+          from backend.main import app
+          routes = [r.path for r in app.routes]
+          required = ["/api/auth/register", "/api/auth/login", "/health"]
+          for r in required:
+              assert any(rt.startswith(r) for rt in routes)
+          print("Routes OK")
+          EOF
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm install
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
