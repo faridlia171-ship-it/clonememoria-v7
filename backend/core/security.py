@@ -22,7 +22,7 @@ pwd_context = CryptContext(
     deprecated="auto"
 )
 
-# bcrypt hard limit (bytes, not characters)
+# bcrypt hard limit (bytes, NOT characters)
 MAX_BCRYPT_PASSWORD_BYTES = 72
 
 # ============================================================
@@ -36,7 +36,7 @@ def _password_byte_length(password: str) -> int:
 def validate_password(password: str) -> None:
     """
     Validate password BEFORE hashing.
-    This is mandatory to avoid bcrypt runtime failures.
+    This prevents bcrypt runtime crashes.
     """
     if not password or not password.strip():
         raise HTTPException(
@@ -57,11 +57,28 @@ def validate_password(password: str) -> None:
 
 def get_password_hash(password: str) -> str:
     """
-    Hash a password securely after validation.
+    Hash a password securely.
+    NEVER let bcrypt raise unhandled exceptions.
     """
     validate_password(password)
-    logger.debug("PASSWORD_HASHING")
-    return pwd_context.hash(password)
+
+    try:
+        logger.debug("PASSWORD_HASHING")
+        return pwd_context.hash(password)
+
+    except ValueError as e:
+        # Absolute safety net — bcrypt must NEVER crash the API
+        logger.error(
+            "PASSWORD_HASHING_FAILED",
+            extra={
+                "reason": str(e),
+                "byte_length": _password_byte_length(password)
+            }
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password format"
+        )
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -85,6 +102,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     )
 
     to_encode.update({"exp": expire})
+
     encoded_jwt = jwt.encode(
         to_encode,
         settings.SECRET_KEY,
