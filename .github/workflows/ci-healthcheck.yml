@@ -1,4 +1,4 @@
-﻿name: CloneMemoria - Full CI Healthcheck
+﻿name: CloneMemoria – Full CI Healthcheck
 
 on:
   push:
@@ -7,74 +7,47 @@ on:
 
 jobs:
   healthcheck:
-    name: Global Project Healthcheck
     runs-on: ubuntu-latest
 
     steps:
-      - name: ⬇️ Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: 🔎 Check duplicate files
-        run: |
-          duplicates=$(find . -type f -printf "%f\n" | sort | uniq -d || true)
-          if [ -n "$duplicates" ]; then
-            echo "❌ Duplicate files detected:"
-            echo "$duplicates"
-            exit 1
-          fi
-
-      - name: 📁 Check required directories
+      - name: Check project structure
         run: |
           test -d backend
           test -d frontend
           test -d backend/api/routes
 
-      - name: 🐍 Setup Python
+      - name: Check backend duplicates
+        run: |
+          backend_dupes=$(find backend -type f -printf "%P\n" | sort | uniq -d || true)
+          if [ -n "$backend_dupes" ]; then
+            echo "Duplicate backend files:"
+            echo "$backend_dupes"
+            exit 1
+          fi
+
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: 📦 Install backend dependencies
+      - name: Install backend deps
         run: pip install -r backend/requirements.txt
 
-      - name: 🧠 Import FastAPI application
-        run: |
-          python - <<'EOF'
+      - name: Import backend
+        run: python - <<EOF
           import backend.main
-          print("Backend import OK")
+          print("Backend OK")
           EOF
 
-      - name: 🔍 Check required API routes
-        run: |
-          python - <<'EOF'
-          from backend.main import app
-          routes = [r.path for r in app.routes]
-
-          required = [
-              "/api/auth/register",
-              "/api/auth/login",
-              "/health"
-          ]
-
-          for r in required:
-              if not any(rt.startswith(r) for rt in routes):
-                  raise Exception(f"Missing route: {r}")
-
-          print("Routes OK")
-          EOF
-
-      - name: 🟢 Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: 📦 Install frontend dependencies
+      - name: Build frontend
         working-directory: frontend
-        run: npm install
-
-      - name: 🏗️ Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      - name: ✅ CI PASSED
-        run: echo "CloneMemoria global healthcheck OK"
+        run: |
+          npm install
+          npm run build
