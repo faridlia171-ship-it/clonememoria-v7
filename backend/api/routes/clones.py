@@ -26,37 +26,45 @@ async def list_clones(
 
     logger.info("LIST_CLONES_REQUEST", extra={"user_id": user_id})
 
-    try:
-        db.rpc('set_config', {
-            'setting': 'app.current_user_id',
-            'value': user_id,
-            'is_local': True
-        }).execute()
-    except Exception:
-        pass
-
-    result = db.table("clones").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+    result = (
+        db.table("clones")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
 
     clones_with_stats = []
 
     for clone in result.data:
-        memory_count_result = db.table("memories").select("id", count="exact").eq("clone_id", clone["id"]).execute()
-        memory_count = memory_count_result.count if memory_count_result.count is not None else 0
-
-        conversation_count_result = db.table("conversations").select("id", count="exact").eq("clone_id", clone["id"]).execute()
-        conversation_count = conversation_count_result.count if conversation_count_result.count is not None else 0
-
-        clone_with_stats = CloneWithStats(
-            **clone,
-            memory_count=memory_count,
-            conversation_count=conversation_count
+        memory_count_result = (
+            db.table("memories")
+            .select("id", count="exact")
+            .eq("clone_id", clone["id"])
+            .execute()
         )
-        clones_with_stats.append(clone_with_stats)
+        memory_count = memory_count_result.count or 0
 
-    logger.info("LIST_CLONES_SUCCESS", extra={
-        "user_id": user_id,
-        "clone_count": len(clones_with_stats)
-    })
+        conversation_count_result = (
+            db.table("conversations")
+            .select("id", count="exact")
+            .eq("clone_id", clone["id"])
+            .execute()
+        )
+        conversation_count = conversation_count_result.count or 0
+
+        clones_with_stats.append(
+            CloneWithStats(
+                **clone,
+                memory_count=memory_count,
+                conversation_count=conversation_count
+            )
+        )
+
+    logger.info(
+        "LIST_CLONES_SUCCESS",
+        extra={"user_id": user_id, "clone_count": len(clones_with_stats)}
+    )
 
     return clones_with_stats
 
@@ -72,11 +80,10 @@ async def create_clone(
     user_id = current_user["id"]
     billing_plan = current_user.get("billing_plan", "FREE")
 
-    logger.info("CREATE_CLONE_REQUEST", extra={
-        "user_id": user_id,
-        "clone_name": clone_data.name,
-        "billing_plan": billing_plan
-    })
+    logger.info(
+        "CREATE_CLONE_REQUEST",
+        extra={"user_id": user_id, "clone_name": clone_data.name, "billing_plan": billing_plan}
+    )
 
     is_allowed, error_message = await check_clone_creation_quota(
         db, user_id, billing_plan
@@ -88,20 +95,11 @@ async def create_clone(
             detail=error_message
         )
 
-    try:
-        db.rpc('set_config', {
-            'setting': 'app.current_user_id',
-            'value': user_id,
-            'is_local': True
-        }).execute()
-    except Exception:
-        pass
-
-    tone_config = clone_data.tone_config.model_dump() if clone_data.tone_config else {
-        "warmth": 0.7,
-        "humor": 0.5,
-        "formality": 0.3
-    }
+    tone_config = (
+        clone_data.tone_config.model_dump()
+        if clone_data.tone_config
+        else {"warmth": 0.7, "humor": 0.5, "formality": 0.3}
+    )
 
     clone_insert = {
         "user_id": user_id,
@@ -122,10 +120,10 @@ async def create_clone(
 
     clone = result.data[0]
 
-    logger.info("CLONE_CREATED_SUCCESS", extra={
-        "clone_id": clone["id"],
-        "clone_name": clone["name"]
-    })
+    logger.info(
+        "CLONE_CREATED_SUCCESS",
+        extra={"clone_id": clone["id"], "clone_name": clone["name"]}
+    )
 
     return CloneResponse(**clone)
 
@@ -137,7 +135,6 @@ async def get_clone(
     """Get a specific clone."""
 
     logger.info("GET_CLONE_REQUEST", extra={"clone_id": clone["id"]})
-
     return CloneResponse(**clone)
 
 
@@ -151,31 +148,19 @@ async def update_clone(
 ):
     """Update a clone."""
 
-    logger.info("UPDATE_CLONE_REQUEST", extra={
-        "clone_id": clone_id,
-        "user_id": user_id
-    })
-
-    try:
-        db.rpc('set_config', {
-            'setting': 'app.current_user_id',
-            'value': user_id,
-            'is_local': True
-        }).execute()
-    except Exception:
-        pass
+    logger.info(
+        "UPDATE_CLONE_REQUEST",
+        extra={"clone_id": clone_id, "user_id": user_id}
+    )
 
     update_data = {}
 
     if clone_data.name is not None:
         update_data["name"] = clone_data.name
-
     if clone_data.description is not None:
         update_data["description"] = clone_data.description
-
     if clone_data.tone_config is not None:
         update_data["tone_config"] = clone_data.tone_config.model_dump()
-
     if clone_data.avatar_url is not None:
         update_data["avatar_url"] = clone_data.avatar_url
 
@@ -183,7 +168,12 @@ async def update_clone(
         logger.warning("UPDATE_CLONE_NO_CHANGES", extra={"clone_id": clone_id})
         return CloneResponse(**clone)
 
-    result = db.table("clones").update(update_data).eq("id", clone_id).execute()
+    result = (
+        db.table("clones")
+        .update(update_data)
+        .eq("id", clone_id)
+        .execute()
+    )
 
     if not result.data:
         logger.error("CLONE_UPDATE_FAILED", extra={"clone_id": clone_id})
@@ -195,7 +185,6 @@ async def update_clone(
     updated_clone = result.data[0]
 
     logger.info("CLONE_UPDATED_SUCCESS", extra={"clone_id": clone_id})
-
     return CloneResponse(**updated_clone)
 
 
@@ -208,24 +197,14 @@ async def delete_clone(
 ):
     """Delete a clone."""
 
-    logger.info("DELETE_CLONE_REQUEST", extra={
-        "clone_id": clone_id,
-        "user_id": user_id
-    })
-
-    try:
-        db.rpc('set_config', {
-            'setting': 'app.current_user_id',
-            'value': user_id,
-            'is_local': True
-        }).execute()
-    except Exception:
-        pass
+    logger.info(
+        "DELETE_CLONE_REQUEST",
+        extra={"clone_id": clone_id, "user_id": user_id}
+    )
 
     db.table("clones").delete().eq("id", clone_id).execute()
 
     logger.info("CLONE_DELETED_SUCCESS", extra={"clone_id": clone_id})
-
     return None
 
 
@@ -239,40 +218,25 @@ async def update_clone_ai_settings(
 ):
     """Update clone AI configuration settings."""
 
-    logger.info("UPDATE_CLONE_AI_SETTINGS_REQUEST", extra={
-        "clone_id": clone_id,
-        "user_id": user_id
-    })
-
-    try:
-        db.rpc('set_config', {
-            'setting': 'app.current_user_id',
-            'value': user_id,
-            'is_local': True
-        }).execute()
-    except Exception:
-        pass
+    logger.info(
+        "UPDATE_CLONE_AI_SETTINGS_REQUEST",
+        extra={"clone_id": clone_id, "user_id": user_id}
+    )
 
     update_data = {}
 
     if config_data.llm_provider is not None:
         update_data["llm_provider"] = config_data.llm_provider
-
     if config_data.llm_model is not None:
         update_data["llm_model"] = config_data.llm_model
-
     if config_data.embedding_provider is not None:
         update_data["embedding_provider"] = config_data.embedding_provider
-
     if config_data.tts_provider is not None:
         update_data["tts_provider"] = config_data.tts_provider
-
     if config_data.tts_voice_id is not None:
         update_data["tts_voice_id"] = config_data.tts_voice_id
-
     if config_data.temperature is not None:
         update_data["temperature"] = config_data.temperature
-
     if config_data.max_tokens is not None:
         update_data["max_tokens"] = config_data.max_tokens
 
@@ -280,7 +244,12 @@ async def update_clone_ai_settings(
         logger.warning("UPDATE_CLONE_AI_SETTINGS_NO_CHANGES", extra={"clone_id": clone_id})
         return CloneResponse(**clone)
 
-    result = db.table("clones").update(update_data).eq("id", clone_id).execute()
+    result = (
+        db.table("clones")
+        .update(update_data)
+        .eq("id", clone_id)
+        .execute()
+    )
 
     if not result.data:
         logger.error("CLONE_AI_SETTINGS_UPDATE_FAILED", extra={"clone_id": clone_id})
@@ -292,7 +261,6 @@ async def update_clone_ai_settings(
     updated_clone = result.data[0]
 
     logger.info("CLONE_AI_SETTINGS_UPDATED_SUCCESS", extra={"clone_id": clone_id})
-
     return CloneResponse(**updated_clone)
 
 
@@ -300,17 +268,16 @@ async def update_clone_ai_settings(
 async def get_clone_ai_settings(
     clone_id: str,
     user_id: str = Depends(get_current_user_id),
-    clone: dict = Depends(verify_clone_ownership),
-    db: Client = Depends(get_db)
+    clone: dict = Depends(verify_clone_ownership)
 ):
     """Get clone AI configuration settings."""
 
-    logger.info("GET_CLONE_AI_SETTINGS_REQUEST", extra={
-        "clone_id": clone_id,
-        "user_id": user_id
-    })
+    logger.info(
+        "GET_CLONE_AI_SETTINGS_REQUEST",
+        extra={"clone_id": clone_id, "user_id": user_id}
+    )
 
-    ai_config = {
+    return {
         "llm_provider": clone.get("llm_provider", "dummy"),
         "llm_model": clone.get("llm_model"),
         "embedding_provider": clone.get("embedding_provider", "dummy"),
@@ -319,10 +286,6 @@ async def get_clone_ai_settings(
         "temperature": clone.get("temperature", 0.7),
         "max_tokens": clone.get("max_tokens")
     }
-
-    logger.info("CLONE_AI_SETTINGS_RETRIEVED", extra={"clone_id": clone_id})
-
-    return ai_config
 
 
 @router.post("/{clone_id}/avatar", response_model=AvatarUploadResponse)
@@ -335,12 +298,15 @@ async def upload_clone_avatar(
 ):
     """Upload an avatar image for a clone."""
 
-    logger.info("UPLOAD_CLONE_AVATAR_REQUEST", extra={
-        "clone_id": clone_id,
-        "user_id": user_id,
-        "filename": file.filename,
-        "content_type": file.content_type
-    })
+    logger.info(
+        "UPLOAD_CLONE_AVATAR_REQUEST",
+        extra={
+            "clone_id": clone_id,
+            "user_id": user_id,
+            "filename": file.filename,
+            "content_type": file.content_type
+        }
+    )
 
     allowed_types = ["image/jpeg", "image/png", "image/jpg", "image/webp"]
     if file.content_type not in allowed_types:
@@ -349,9 +315,8 @@ async def upload_clone_avatar(
             detail=f"File type not allowed. Allowed types: {', '.join(allowed_types)}"
         )
 
-    max_size = 5 * 1024 * 1024
     contents = await file.read()
-    if len(contents) > max_size:
+    if len(contents) > 5 * 1024 * 1024:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File size exceeds 5MB limit"
@@ -360,27 +325,21 @@ async def upload_clone_avatar(
     media_dir = os.path.join(os.getcwd(), "media", "avatars")
     os.makedirs(media_dir, exist_ok=True)
 
-    file_extension = os.path.splitext(file.filename)[1] if file.filename else ".jpg"
-    safe_filename = f"{clone_id}{file_extension}"
-    file_path = os.path.join(media_dir, safe_filename)
+    ext = os.path.splitext(file.filename)[1] if file.filename else ".jpg"
+    filename = f"{clone_id}{ext}"
+    path = os.path.join(media_dir, filename)
 
-    with open(file_path, "wb") as f:
+    with open(path, "wb") as f:
         f.write(contents)
 
-    avatar_url = f"/media/avatars/{safe_filename}"
+    avatar_url = f"/media/avatars/{filename}"
 
-    try:
-        db.rpc('set_config', {
-            'setting': 'app.current_user_id',
-            'value': user_id,
-            'is_local': True
-        }).execute()
-    except Exception:
-        pass
-
-    result = db.table("clones").update({
-        "avatar_image_url": avatar_url
-    }).eq("id", clone_id).execute()
+    result = (
+        db.table("clones")
+        .update({"avatar_image_url": avatar_url})
+        .eq("id", clone_id)
+        .execute()
+    )
 
     if not result.data:
         logger.error("AVATAR_UPDATE_FAILED", extra={"clone_id": clone_id})
@@ -389,9 +348,9 @@ async def upload_clone_avatar(
             detail="Failed to update clone with avatar URL"
         )
 
-    logger.info("CLONE_AVATAR_UPLOADED_SUCCESS", extra={
-        "clone_id": clone_id,
-        "avatar_url": avatar_url
-    })
+    logger.info(
+        "CLONE_AVATAR_UPLOADED_SUCCESS",
+        extra={"clone_id": clone_id, "avatar_url": avatar_url}
+    )
 
     return AvatarUploadResponse(avatar_image_url=avatar_url)
