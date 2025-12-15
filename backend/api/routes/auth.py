@@ -15,13 +15,12 @@ router = APIRouter()
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, db: Client = Depends(get_db)):
-    """Register a new user."""
-
     logger.info("REGISTRATION_ATTEMPT", extra={"email": user_data.email})
 
-    existing = db.table("users").select("id").eq("email", user_data.email).maybe_single().execute()
+    # SAFE QUERY — no maybe_single()
+    result = db.table("users").select("id").eq("email", user_data.email).execute()
 
-    if existing.data:
+    if result.data and len(result.data) > 0:
         logger.warning("REGISTRATION_FAILED_EMAIL_EXISTS", extra={"email": user_data.email})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -30,73 +29,55 @@ async def register(user_data: UserCreate, db: Client = Depends(get_db)):
 
     password_hash = get_password_hash(user_data.password)
 
-    user_insert = {
+    insert_result = db.table("users").insert({
         "email": user_data.email,
         "password_hash": password_hash,
         "full_name": user_data.full_name
-    }
+    }).execute()
 
-    result = db.table("users").insert(user_insert).execute()
-
-    if not result.data:
+    if not insert_result.data:
         logger.error("USER_CREATION_FAILED", extra={"email": user_data.email})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create user"
         )
 
-    user = result.data[0]
-    access_token = create_access_token(data={"sub": user["id"]})
+    user = insert_result.data[0]
+    access_token = create_access_token({"sub": user["id"]})
 
-    logger.info("USER_REGISTERED_SUCCESS", extra={
-        "user_id": user["id"],
-        "email": user["email"]
-    })
-
-    user_response = UserResponse(**user)
+    logger.info("USER_REGISTERED_SUCCESS", extra={"user_id": user["id"]})
 
     return TokenResponse(
         access_token=access_token,
-        user=user_response
+        user=UserResponse(**user)
     )
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(credentials: UserLogin, db: Client = Depends(get_db)):
-    """Login and get access token."""
-
     logger.info("LOGIN_ATTEMPT", extra={"email": credentials.email})
 
-    result = db.table("users").select("*").eq("email", credentials.email).maybe_single().execute()
+    result = db.table("users").select("*").eq("email", credentials.email).execute()
 
     if not result.data:
-        logger.warning("LOGIN_FAILED_USER_NOT_FOUND", extra={"email": credentials.email})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
 
-    user = result.data
+    user = result.data[0]
 
     if not verify_password(credentials.password, user["password_hash"]):
-        logger.warning("LOGIN_FAILED_INVALID_PASSWORD", extra={"email": credentials.email})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
 
-    access_token = create_access_token(data={"sub": user["id"]})
-
-    logger.info("LOGIN_SUCCESS", extra={
-        "user_id": user["id"],
-        "email": user["email"]
-    })
-
-    user_response = UserResponse(**user)
+    access_token = create_access_token({"sub": user["id"]})
 
     return TokenResponse(
         access_token=access_token,
-        user=user_response
+        user=UserResponse(**user)
     )
 
 
@@ -105,17 +86,12 @@ async def get_current_user(
     user_id: str = Depends(get_current_user_id),
     db: Client = Depends(get_db)
 ):
-    """Get current user information."""
-
-    logger.info("GET_CURRENT_USER", extra={"user_id": user_id})
-
-    result = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    result = db.table("users").select("*").eq("id", user_id).execute()
 
     if not result.data:
-        logger.error("CURRENT_USER_NOT_FOUND", extra={"user_id": user_id})
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
 
-    return UserResponse(**result.data)
+    return UserResponse(**result.data[0])
