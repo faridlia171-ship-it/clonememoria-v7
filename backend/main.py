@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import FileResponse, PlainTextResponse
 
 from backend.core.config import settings
@@ -62,14 +61,15 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(WorkspaceContextMiddleware, enabled=True)
 app.add_middleware(RedisRateLimitMiddleware, enabled=True)
 
+# ============================================================
+# CORS — SOURCE UNIQUE DE VÉRITÉ
+# ============================================================
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:8000",
-    "https://localhost:3000"
+    "https://localhost:3000",
+    "https://clonememoria-frontend.onrender.com"
 ]
-
-if getattr(settings, "FRONTEND_URL", None):
-    ALLOWED_ORIGINS.append(settings.FRONTEND_URL)
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,17 +93,16 @@ app.add_middleware(
     max_age=600
 )
 
-
 # ============================================================
-# TRUSTED HOSTS — FIX RENDER ERRORS 400
+# TRUSTED HOSTS
 # ============================================================
 TRUSTED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "*.localhost",
-    "*.onrender.com",                     # Render domain
-    "clonememoria-backend.onrender.com",  # Your exact domain
-    "*",                                   # Internal Render IPs: 10.x.x.x
+    "*.onrender.com",
+    "clonememoria-backend.onrender.com",
+    "*"
 ]
 
 app.add_middleware(
@@ -111,11 +110,14 @@ app.add_middleware(
     allowed_hosts=TRUSTED_HOSTS
 )
 
-logger.info("SECURITY_MIDDLEWARE_CONFIGURED", extra={
-    "allowed_origins": ALLOWED_ORIGINS,
-    "trusted_hosts": TRUSTED_HOSTS,
-    "rate_limiting_enabled": True
-})
+logger.info(
+    "SECURITY_MIDDLEWARE_CONFIGURED",
+    extra={
+        "allowed_origins": ALLOWED_ORIGINS,
+        "trusted_hosts": TRUSTED_HOSTS,
+        "rate_limiting_enabled": True
+    }
+)
 
 
 # ============================================================
@@ -132,7 +134,7 @@ async def add_security_headers(request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
 
-    csp_directives = [
+    response.headers["Content-Security-Policy"] = "; ".join([
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
         "style-src 'self' 'unsafe-inline'",
@@ -142,8 +144,7 @@ async def add_security_headers(request, call_next):
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'"
-    ]
-    response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+    ])
 
     return response
 
@@ -166,29 +167,24 @@ app.include_router(health.router, tags=["health"])
 app.include_router(api_keys.router, prefix=f"{settings.API_V1_PREFIX}", tags=["api-keys"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_PREFIX}", tags=["admin"])
 
-
 logger.info("API_ROUTES_REGISTERED", extra={"api_prefix": settings.API_V1_PREFIX})
 
 
 # ============================================================
-# ROOT + FIX FOR RENDER (HEAD, FAVICON, ROBOTS)
+# ROOT / FAVICON / ROBOTS
 # ============================================================
 @app.get("/")
 async def root():
-    logger.debug("ROOT_ENDPOINT_ACCESSED")
     return {
         "message": f"Welcome to {settings.PROJECT_NAME}",
         "version": settings.VERSION,
         "docs": "/docs"
     }
 
-
 @app.head("/")
 async def head_root():
     return Response(status_code=200)
 
-
-# Favicon path
 FAVICON_PATH = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
 
 @app.get("/favicon.ico")
@@ -197,19 +193,16 @@ async def favicon():
         return FileResponse(FAVICON_PATH, media_type="image/x-icon")
     return Response(status_code=204)
 
-
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
     return "User-agent: *\nDisallow: /"
 
 
 # ============================================================
-# RUN (LOCAL DEV ONLY)
+# LOCAL DEV
 # ============================================================
 if __name__ == "__main__":
     import uvicorn
-    logger.info("STARTING_UVICORN_SERVER", extra={"host": "0.0.0.0", "port": 8000})
-
     uvicorn.run(
         "backend.main:app",
         host="0.0.0.0",
