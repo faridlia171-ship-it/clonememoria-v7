@@ -7,59 +7,74 @@ on:
 
 jobs:
   healthcheck:
+    name: Global Project Healthcheck
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Check duplicate files
+      - name: 🔎 Check duplicate files
         run: |
-          duplicates=$(find . -type f -printf "%f\n" | sort | uniq -d)
+          duplicates=$(find . -type f -printf "%f\n" | sort | uniq -d || true)
           if [ -n "$duplicates" ]; then
-            echo "Duplicate files detected"
+            echo "❌ Duplicate files detected:"
             echo "$duplicates"
             exit 1
           fi
 
-      - name: Check directories
+      - name: 📁 Check required directories
         run: |
           test -d backend
           test -d frontend
           test -d backend/api/routes
 
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Install backend deps
+      - name: 📦 Install backend dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Import backend
-        run: python - <<EOF
+      - name: 🧠 Import FastAPI application
+        run: |
+          python - <<'EOF'
           import backend.main
-          print("Backend OK")
+          print("Backend import OK")
           EOF
 
-      - name: Check routes
-        run: python - <<EOF
+      - name: 🔍 Check required API routes
+        run: |
+          python - <<'EOF'
           from backend.main import app
           routes = [r.path for r in app.routes]
-          required = ["/api/auth/register", "/api/auth/login", "/health"]
+
+          required = [
+              "/api/auth/register",
+              "/api/auth/login",
+              "/health"
+          ]
+
           for r in required:
-              assert any(rt.startswith(r) for rt in routes)
+              if not any(rt.startswith(r) for rt in routes):
+                  raise Exception(f"Missing route: {r}")
+
           print("Routes OK")
           EOF
 
-      - name: Setup Node
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install frontend deps
+      - name: 📦 Install frontend dependencies
         working-directory: frontend
         run: npm install
 
-      - name: Build frontend
+      - name: 🏗️ Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: ✅ CI PASSED
+        run: echo "CloneMemoria global healthcheck OK"
