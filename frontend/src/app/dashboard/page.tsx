@@ -8,7 +8,7 @@ import { CloneCard } from '@/components/clone/CloneCard';
 import { CloneForm } from '@/components/forms/CloneForm';
 import apiClient from '@/lib/apiClient';
 import { logger } from '@/utils/logger';
-import { CloneWithStats, ToneConfig } from '@/types';
+import { CloneWithStats } from '@/types';
 import { Plus, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -64,8 +64,28 @@ export default function DashboardPage() {
       {showCreateForm && (
         <div className="mb-6">
           <CloneForm
-            onCreated={handleCloneCreated}
+            onSubmit={async (data) => {
+              setCreating(true);
+              try {
+                const tempClone = {
+                  id: crypto.randomUUID(),
+                  name: data.name,
+                  description: data.description,
+                  tone_config: data.tone_config,
+                  memory_count: 0,
+                  conversation_count: 0,
+                  user_id: 'temp',
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                };
+
+                handleCloneCreated(tempClone as CloneWithStats);
+              } finally {
+                setCreating(false);
+              }
+            }}
             onCancel={() => setShowCreateForm(false)}
+            submitLabel="Create Clone"
           />
         </div>
       )}
@@ -86,4 +106,3 @@ export default function DashboardPage() {
     </AppLayout>
   );
 }
-
