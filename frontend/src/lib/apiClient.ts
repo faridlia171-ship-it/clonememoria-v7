@@ -89,6 +89,10 @@ class APIClient {
     return this.get<Clone[]>(`${API_PREFIX}/clones`, true);
   }
 
+  getCloneById(cloneId: string): Promise<Clone> {
+    return this.get<Clone>(`${API_PREFIX}/clones/${cloneId}`, true);
+  }
+
   clones = {
     list: async (): Promise<CloneWithStats[]> => {
       const clones = await this.listClones();
@@ -135,7 +139,7 @@ class APIClient {
   }
 
   /* =======================
-     BILLING  ✅ FIX ICI
+     BILLING
   ======================= */
 
   getBillingPlan(): Promise<BillingQuota> {
@@ -147,7 +151,6 @@ class APIClient {
   }
 
   createCheckout(plan: string): Promise<{ checkout_url: string }> {
-    logger.info('createCheckout called', { plan });
     return this.post<{ checkout_url: string }>(
       `${API_PREFIX}/billing/checkout?plan=${encodeURIComponent(plan)}`,
       {},
