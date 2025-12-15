@@ -73,11 +73,15 @@ class APIClient {
     return (await response.json()) as T;
   }
 
-  protected get<T>(endpoint: string, auth = false): Promise<T> {
+  /* =======================
+     HTTP PUBLIC
+  ======================= */
+
+  public get<T>(endpoint: string, auth = false): Promise<T> {
     return this.request<T>(endpoint, { method: 'GET', requiresAuth: auth });
   }
 
-  protected post<T>(endpoint: string, data: unknown, auth = false): Promise<T> {
+  public post<T>(endpoint: string, data: unknown, auth = false): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -141,7 +145,7 @@ class APIClient {
   }
 
   getConversationMessages(_conversationId: string): Promise<Message[]> {
-    // Stub temporaire pour compatibilité front
+    // Compatibilité legacy front
     return Promise.resolve([]);
   }
 
